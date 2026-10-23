@@ -1,0 +1,1 @@
+<template><div class="ranking-page"><ChartRecommendations full/></div></template><script setup>import ChartRecommendations from '../components/ChartRecommendations.vue'</script><style scoped>.ranking-page{height:100%;overflow:hidden}</style>

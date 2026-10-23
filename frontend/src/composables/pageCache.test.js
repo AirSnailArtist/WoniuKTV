@@ -1,0 +1,4 @@
+import {it,expect,vi} from 'vitest'
+import {createPageCache} from './pageCache'
+it('reuses a prefetched page without another request',async()=>{const cache=createPageCache(),fetch=vi.fn(async()=>['next']);await cache.load('artist:1',fetch);expect(cache.peek('artist:1')).toEqual(['next']);await cache.load('artist:1',fetch);expect(fetch).toHaveBeenCalledTimes(1)})
+it('deduplicates concurrent requests and retries failures',async()=>{const cache=createPageCache();let resolve;const fetch=vi.fn(()=>new Promise(r=>resolve=r));const a=cache.load('a',fetch),b=cache.load('a',fetch);await Promise.resolve();resolve([1]);await Promise.all([a,b]);expect(fetch).toHaveBeenCalledTimes(1);await expect(cache.load('b',()=>Promise.reject(Error('offline')))).rejects.toThrow('offline');expect(await cache.load('b',()=>[2])).toEqual([2])})

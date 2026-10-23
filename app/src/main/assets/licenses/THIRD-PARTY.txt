@@ -1,0 +1,15 @@
+Pocket KTV 0.1.0 — third-party notices
+
+Home KTV, Copyright (c) 2026 Home KTV contributors — MIT.
+115driver, Copyright (c) 2022 sheltonzhu — MIT.
+115-plus-desktop, Copyright (c) 2025 lvzhenbo — MIT.
+115-sdk-go — Apache License 2.0.
+
+AndroidX and Android Media3 1.4.1 — Android Open Source Project, Apache License 2.0.
+Kotlin and kotlinx.coroutines — JetBrains, Apache License 2.0.
+OkHttp 4.12.0 and Okio — Square, Apache License 2.0.
+ZXing core 3.5.3 — ZXing authors, Apache License 2.0.
+pinyin4j 2.5.1 — GPL-2.0-or-later. This app is distributed under GPL-3.0 to meet combined-work obligations.
+FFmpeg 6.0.1 audio decoder supplied by Home KTV — LGPL-2.1-or-later; source and build instructions: https://github.com/androidx/media/tree/1.4.1/libraries/decoder_ffmpeg . Actual codec configuration must be reviewed before public redistribution.
+
+Full MIT notices and Apache-2.0 text are included in this directory. Source license files for GPL/LGPL are included with the deliverable.

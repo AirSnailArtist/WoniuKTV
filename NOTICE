@@ -1,0 +1,1 @@
+Pocket KTV adaptations are GPL-3.0-or-later because of the pinyin4j dependency. Retained Home KTV modules remain MIT. See app/src/main/assets/licenses and UPSTREAM.md for original notices.
