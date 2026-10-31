@@ -38,7 +38,7 @@ class PocketActivity:ComponentActivity(){
         favorites=onlyFavorites;queueMode=queued;home.visibility=View.GONE;library.visibility=View.VISIBLE;refresh()
     }
     private fun showHome(){home.visibility=View.VISIBLE;library.visibility=View.GONE;search.clearFocus()}
-    private fun management(){AlertDialog.Builder(this).setTitle("曲库管理").setItems(arrayOf("选择 115 曲库并扫描","继续 / 暂停扫描","目录备份与恢复","整理歌名与分类","设置")){_,i->
+    private fun management(){AlertDialog.Builder(this).setTitle("曲库管理").setItems(arrayOf("选择 115 曲库并扫描","继续 / 暂停扫描","数据备份与恢复","整理歌名与分类","设置")){_,i->
         when(i){0->browse("scan");1->toggleScan();2->catalogMenu();3->runTask("正在整理歌名与分类…"){CatalogRepository(db,drive,cacheDir).organize{done,total->runOnUiThread{status.text="正在整理 $done / $total 首"}};"曲库整理完成，共 ${db.count()} 首；可按语种、流派和版本浏览"};4->settings()}
     }.setNegativeButton("关闭",null).show()}
     private val exportLauncher=registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->
@@ -83,6 +83,7 @@ class PocketActivity:ComponentActivity(){
             addView(label("把喜欢的歌，留在家里唱",11f,muted))
         },LinearLayout.LayoutParams(0,-2,1f))
         loginButton=button("115 登录"){accountDialog()};header.addView(loginButton)
+        header.addView(button("其他网盘"){startActivity(Intent(this,CloudDriveActivity::class.java))})
         header.addView(button("曲库管理"){management()})
         scanButton=button("续扫"){toggleScan()};scanButton.visibility=View.GONE
         root.addView(header)
@@ -114,7 +115,7 @@ class PocketActivity:ComponentActivity(){
         frame.addView(list,FrameLayout.LayoutParams(-1,-1))
         empty=label("你的曲库，从这里开始\n\n① 扫码登录 115\n② 选择 KTV 曲库文件夹\n③ 扫描并保存到本机\n\n已有曲库清单？点「目录备份」直接导入。",17f,muted).apply{gravity=Gravity.CENTER}
         frame.addView(empty,FrameLayout.LayoutParams(-1,-1));library.addView(frame,LinearLayout.LayoutParams(-1,0,1f))
-        root.addView(label("窝牛家庭KTV 0.5 · 本地曲库 · 115 目录备份与恢复",11f,muted))
+        root.addView(label("窝牛家庭KTV 0.5 · 本地曲库 · 115 数据备份与恢复",11f,muted))
         list.setOnItemClickListener{_,_,position,_->rows.getOrNull(position)?.let{song->
             AlertDialog.Builder(this).setTitle(song.title).setMessage("歌手：${song.artist.ifBlank{"未识别"}}\n文件：${song.name}\n路径：${song.path}\n\n加入队列后可在「已点歌曲」管理；播放功能开发中。")
                 .setPositiveButton(if(queueMode)"移出已点" else "点歌"){_,_->if(queueMode)db.removeQueue(song.queueId) else db.enqueue(song.id);refresh();status.text=if(queueMode)"已移出队列" else "已加入点歌队列"}
@@ -219,7 +220,7 @@ class PocketActivity:ComponentActivity(){
                 dialog.dismiss();AlertDialog.Builder(this).setTitle("导入这份目录？").setMessage(entry.name+"\n将合并到本地曲库，只接受同一个 115 账号的目录，不导入登录信息。")
                     .setPositiveButton("导入"){_,_->runTask("正在从 115 下载并导入目录…"){
                         val count=CatalogRepository(db,drive,cacheDir).restore(entry.pickCode){message->runOnUiThread{status.text=message}}
-                        "已恢复 $count 首歌曲及备份内的智能偏好，无需重新扫描全库"
+                        "已恢复 $count 首歌曲及备份内的歌单、收藏与演唱偏好，无需重新扫描全库"
                     }}.setNegativeButton("取消",null).show()
             }
         }}
@@ -249,10 +250,10 @@ class PocketActivity:ComponentActivity(){
         }catch(e:CancellationException){status.text="扫描已暂停，断点已保存";throw e}catch(e:Exception){status.text="扫描暂停：${safeError(e)}。可稍后续扫。"}
         finally{scanning=null;scanButton.text="续扫";refresh()}}
     }
-    private fun catalogFile()=File(cacheDir,"pocket-ktv-catalog-${java.text.SimpleDateFormat("yyyyMMdd-HHmmss",java.util.Locale.ROOT).format(java.util.Date())}-${java.util.UUID.randomUUID().toString().take(8)}.json")
+    private fun catalogFile()=File(cacheDir,CatalogRepository.backupFileName())
     private fun catalogMenu(){
         if(!drive.loggedIn){accountDialog();return};if(busy()){status.text="请先暂停扫描或等待当前操作完成";return}
-        AlertDialog.Builder(this).setTitle("曲库目录 · 跨设备复用").setItems(arrayOf("备份曲库与智能偏好到 115","从 115 导入目录清单","导出 JSON 到本机","从本机导入 JSON","选择其他备份文件夹")){_,which->when(which){
+        AlertDialog.Builder(this).setTitle("完整备份 · 跨设备复用").setItems(arrayOf("备份曲库、歌单、收藏与演唱偏好到 115","从 115 恢复备份（兼容旧目录）","导出 JSON 到本机","从本机导入 JSON","选择其他备份文件夹")){_,which->when(which){
             0->runTask("正在备份整理后的曲库…"){val path=CatalogRepository(db,drive,cacheDir).backup{message->runOnUiThread{status.text=message}};"备份已上传并校验：$path"};1->browse("import");4->browse("upload")
             2->runTask("正在生成目录…"){
                 val file=catalogFile();CatalogRepository(db,drive,cacheDir).organize();val count=withContext(Dispatchers.IO){CatalogCodec.export(db,file)};exportFile=file

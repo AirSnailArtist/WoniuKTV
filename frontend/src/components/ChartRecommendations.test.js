@@ -2,7 +2,9 @@ import {afterEach,expect,it,vi} from 'vitest'
 import {createApp,nextTick} from 'vue'
 import ChartRecommendations from './ChartRecommendations.vue'
 import api from '../api/client'
+import {biliRequest} from '../api/bilibili'
 const {push,applySnapshot}=vi.hoisted(()=>({push:vi.fn(),applySnapshot:vi.fn()}))
+vi.mock('../api/bilibili',()=>({biliRequest:vi.fn()}))
 vi.mock('vue-router',()=>({useRouter:()=>({push})}))
 vi.mock('../stores/player',()=>({usePlayerStore:()=>({orderedSongIds:new Set(),isPlaying:true,applySnapshot})}))
 vi.mock('../api/client',()=>({default:{discovery:vi.fn(),control:vi.fn(),chartCandidates:vi.fn()}}))
@@ -44,4 +46,10 @@ it('keeps remote focus inside the chart picker and restores the trigger on confi
  function key(k){document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}))}
  key('ArrowRight');expect(document.activeElement.dataset.chart).toBe('qq');key('Enter');await nextTick();expect(document.activeElement).toBe(trigger);expect(trigger.textContent).toContain('抖音热歌')
  trigger.click();await nextTick();expect(document.activeElement.dataset.chart).toBe('qq');key('Escape');await nextTick();expect(document.querySelector('[aria-label="选择音乐榜单"]')).toBeNull();expect(document.activeElement).toBe(trigger)
+})
+
+it('orders a Bilibili ranking video directly instead of searching by its title',async()=>{
+ const root=await show({source:'bili_music',rank:1,title:'音乐视频',artists:['UP主'],bvid:'BV1GJ411x7h7',available:true,status:'video'})
+ biliRequest.mockResolvedValueOnce({songId:'8000000000000000001'});root.querySelector('.chart-song').click();await Promise.resolve();await nextTick()
+ expect(biliRequest).toHaveBeenCalledWith('order','POST',{bvid:'BV1GJ411x7h7'});expect(push).not.toHaveBeenCalled();expect(api.control).not.toHaveBeenCalled()
 })

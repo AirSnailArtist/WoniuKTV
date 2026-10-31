@@ -16,7 +16,8 @@ object CatalogCodec {
         val account=db.setting("account");require(expectedAccount==null||expectedAccount==account){"账号已切换，目录未上传"};require(account.isNotBlank()){"请先登录并绑定曲库"}
         var count=0
         JsonWriter(file.writer(Charsets.UTF_8).buffered()).use{w->
-            w.beginObject().name("format").value("pocket-ktv-catalog").name("version").value(3)
+            w.beginObject().name("format").value("pocket-ktv-catalog").name("version").value(4)
+                .name("app_name").value("窝牛KTV").name("app_version").value(BuildConfig.VERSION_NAME)
                 .name("account_id").value(account).name("created_at").value(System.currentTimeMillis())
                 .name("root_id").value(db.setting("root_id")).name("root_path").value(db.setting("root_path"))
                 .name("name_rule").value(db.setting("name_rule","artist_title"))
@@ -35,7 +36,7 @@ object CatalogCodec {
                     w.name("accompaniment").value(c.getInt(14)).endObject();count++
                 }
             }
-            w.endArray().name("song_count").value(count).name("learning");SmartLibrary(db).writeBackup(w);w.endObject()
+            w.endArray().name("song_count").value(count).name("learning");SmartLibrary(db).writeBackup(w);w.name("personal_data");PortableState.write(db,w);w.endObject()
         }
         require(db.setting("account")==account){"账号已切换，目录未上传"}
         require(file.length()<=MAX_BYTES){"目录超过 128MB，请按子目录拆分"}
@@ -61,9 +62,10 @@ object CatalogCodec {
                     "metadata_rule_version"->metadataVersion=r.nextString()
                     "scan_complete"->complete=r.nextBoolean()
                     "chart_mappings"->{r.beginArray();while(r.hasNext()){require(mappings.size<10000);var key="";var id="";r.beginObject();while(r.hasNext())when(r.nextName()){"key"->key=r.nextString();"song_id"->id=r.nextString();else->r.skipValue()};r.endObject();require(key.matches(Regex("chart_mapping:[a-f0-9]{64}"))&&id.matches(Regex("[0-9]{1,30}")));mappings[key]=id};r.endArray()}
-                    "learning"->{require(format=="pocket-ktv-catalog"&&version==3&&owner==account){"智能偏好账号或格式不匹配"};SmartLibrary(db).readBackup(r,account)}
+                    "learning"->{require(format=="pocket-ktv-catalog"&&version in 3..4&&owner==account){"智能偏好账号或格式不匹配"};SmartLibrary(db).readBackup(r,account)}
+                    "personal_data"->{require(format=="pocket-ktv-catalog"&&version==4&&owner==account){"个人数据账号或格式不匹配"};PortableState.read(db,r)}
                     "songs"->{
-                        require(format=="pocket-ktv-catalog"&&version in 1..3){"不支持的曲库目录格式"}
+                        require(format=="pocket-ktv-catalog"&&version in 1..4){"不支持的曲库目录格式"}
                         require(owner==account){"这份目录属于另一个 115 账号，请登录对应账号"}
                         require(!found){"目录包含重复歌曲列表"};found=true
                         r.beginArray()
@@ -80,7 +82,7 @@ object CatalogCodec {
                             }
                             r.endObject()
                             val id=row["id"].orEmpty();val pick=row["pick_code"].orEmpty()
-                            require(id.matches(Regex("[0-9]{1,30}"))&&pick.matches(Regex("[a-zA-Z0-9]{1,64}"))){"目录包含无效的 115 文件标识"}
+                            require(id.matches(Regex("[0-9]{1,30}"))&&pick.matches(Regex("[a-zA-Z0-9_-]{1,128}"))){"目录包含无效的 115 文件标识"}
                             val name=row["name"].orEmpty();val title=row["title"].orEmpty();val artist=row["artist"].orEmpty()
                             require(title.isNotBlank()&&name.isNotBlank()){"目录缺少歌名或文件名"}
                             val savedSearch=row["search"].orEmpty()
@@ -95,6 +97,7 @@ object CatalogCodec {
                             if(added!=-1L)database.update("songs",ContentValues().apply{put("favorite",if(favorite)1 else 0)
                                 put("audio_mode",row["audio_mode"].orEmpty().takeIf{it in listOf("tracks","track","stereo","left","right")}?:"tracks")
                                 put("accompaniment",row["accompaniment"]?.toIntOrNull()?.coerceIn(0,100)?:1)},"id=?",arrayOf(id))
+                            if(favorite)database.update("songs",ContentValues().apply{put("favorite",1)},"id=?",arrayOf(id))
                             count++
                             if(count % 500 == 0)progress(count)
                         };r.endArray()
@@ -104,7 +107,7 @@ object CatalogCodec {
                 r.endObject();require(r.peek()==android.util.JsonToken.END_DOCUMENT){"目录文件包含额外内容"}
             }
             require(found){"目录中没有歌曲列表"}
-            require(format=="pocket-ktv-catalog"&&version in 1..3&&owner==account){"目录元数据不一致"}
+            require(format=="pocket-ktv-catalog"&&version in 1..4&&owner==account){"目录元数据不一致"}
             database.delete("folders",null,null)
             db.setting("root_id",rootId,true);db.setting("root_path",rootPath,true);db.setting("name_rule",rule,true)
             db.setting("scan_done",if(complete)"1" else "0",true)

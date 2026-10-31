@@ -1,0 +1,1 @@
+export function formatVideoViews(value){const n=Number(value);if(value==null||!Number.isFinite(n)||n<0)return '播放量暂不可用';if(n>=1e8)return (n/1e8).toFixed(1).replace(/\.0$/,'')+'亿次播放';if(n>=1e4)return (n/1e4).toFixed(1).replace(/\.0$/,'')+'万次播放';return Math.floor(n)+'次播放'}

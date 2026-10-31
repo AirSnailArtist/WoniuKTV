@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -8,9 +9,10 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <application android:label="窝牛KTV" android:icon="@mipmap/ic_woniu_launcher" android:roundIcon="@mipmap/ic_woniu_launcher" android:theme="@style/PocketTheme" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
         <service android:name=".PlaybackNotificationService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <activity android:name=".CloudDriveActivity" android:exported="false" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|keyboardHidden" />
         <activity android:name=".PocketActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="sensorLandscape">
         </activity>
-        <activity android:name=".SongbookActivity" android:exported="true" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|keyboardHidden">
+        <activity android:name=".SongbookActivity" android:launchMode="singleTask" android:documentLaunchMode="never" android:exported="true" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
         </activity>

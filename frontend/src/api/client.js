@@ -68,6 +68,8 @@ export const api = {
 
   // 发现/历史/心愿（P3）
   // Discovery / history / wishes (P3)
+  collection: (id,offset=0,limit=20) => request('/music/collection?'+new URLSearchParams({id,offset,limit})),
+  smartFavorites: (kind,after='',limit=6) => request('/smart/favorites?'+new URLSearchParams({kind,after,limit})),
   chartCandidates: title => request('/chart/candidates?title='+encodeURIComponent(title)),
   chartMatch: (title,artists,id) => request('/chart/match',{method:'POST',body:JSON.stringify({title,artists,id})}),
   discovery: (refresh=false) => request('/discovery'+(refresh===true?'?refresh=1':'')),

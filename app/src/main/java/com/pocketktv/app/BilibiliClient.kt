@@ -12,9 +12,9 @@ import java.security.MessageDigest
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
-data class BiliVideo(val bvid:String,val cid:Long,val aid:Long,val title:String,val owner:String,val duration:Long) {
+data class BiliVideo(val bvid:String,val cid:Long,val aid:Long,val title:String,val owner:String,val duration:Long,val views:Long=-1) {
     val id get()=(8_000_000_000_000_000_000L+cid).toString()
-    fun json()=JSONObject().put("bvid",bvid).put("cid",cid).put("title",title).put("owner",owner).put("duration",duration)
+    fun json()=JSONObject().put("bvid",bvid).put("cid",cid).put("title",title).put("owner",owner).put("duration",duration).put("views",views)
 }
 
 /** Web integration with explicitly requested KTV favorites. No shared APP keys, credential service, or access-control bypass.
@@ -30,6 +30,7 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
     private val apiBase:String="https://api.bilibili.com",private val passportBase:String="https://passport.bilibili.com") {
     companion object {
         const val UA="Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        fun viewCount(value:Any?):Long {if(value==null||value==JSONObject.NULL)return -1;val text=value.toString().replace(",","").trim();text.toLongOrNull()?.let{return it.coerceAtLeast(0)};val match=Regex("([0-9]+(?:\\.[0-9]+)?)\\s*([万亿])").matchEntire(text)?:return -1;return (match.groupValues[1].toDouble()*(if(match.groupValues[2]=="亿")100_000_000 else 10_000)).toLong()}
         fun validBvid(value:String)=value.matches(Regex("BV[0-9A-Za-z]{10}"))
         fun cleanTitle(value:String)=value.replace(Regex("<[^>]{0,200}>"),"").replace("&quot;","\"").replace("&#39;","'").replace("&lt;","<").replace("&gt;",">").replace("&amp;","&").take(300)
         private val mixin=intArrayOf(46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52)
@@ -100,7 +101,7 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
         check(!data.has("v_voucher")){"B站搜索需要验证，请扫码登录后重试；若已登录，请稍后再试"}
         val rows=data.optJSONArray("result")?:error("B站搜索暂不可用，请稍后重试")
         check(rows.length()<=50){"B站搜索结果格式已改变"}
-        return JSONObject().put("items",JSONArray().apply{for(i in 0 until rows.length()){val row=rows.getJSONObject(i);val bv=row.optString("bvid");if(validBvid(bv))put(JSONObject().put("bvid",bv).put("title",cleanTitle(row.optString("title"))).put("owner",row.optString("author").take(100)).put("duration",row.optString("duration")).put("available",true))}}).put("hasMore",page<data.optInt("numPages",page)).put("page",page)
+        return JSONObject().put("items",JSONArray().apply{for(i in 0 until rows.length()){val row=rows.getJSONObject(i);val bv=row.optString("bvid");if(validBvid(bv))put(JSONObject().put("bvid",bv).put("title",cleanTitle(row.optString("title"))).put("owner",row.optString("author").take(100)).put("views",viewCount(row.opt("play"))).put("duration",row.optString("duration")).put("available",true))}}).put("hasMore",page<data.optInt("numPages",page)).put("page",page)
     }
     fun folders(uid:String,page:Int):JSONObject {
         val owner=uid.ifBlank{cookie.split(';').map{it.trim()}.firstOrNull{it.startsWith("DedeUserID=")}?.substringAfter('=').orEmpty()}
@@ -113,13 +114,13 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
         require(folder.matches(Regex("[0-9]{1,20}"))&&page in 1..1000){"收藏夹编号无效"}
         val d=request("x/v3/fav/resource/list",mapOf("media_id" to folder,"pn" to "$page","ps" to "20","platform" to "web"))
         val rows=d.optJSONArray("medias")?:JSONArray();check(rows.length()<=20){"B站收藏内容分页格式已改变"}
-        return JSONObject().put("items",JSONArray().apply{for(i in 0 until rows.length()){val row=rows.getJSONObject(i);val bv=row.optString("bvid");put(JSONObject().put("aid",row.optLong("id").toString()).put("bvid",bv).put("title",cleanTitle(row.optString("title"))).put("owner",row.optJSONObject("upper")?.optString("name").orEmpty().take(100)).put("duration",row.optLong("duration")).put("available",validBvid(bv)&&row.optString("title")!="已失效视频"))}}).put("hasMore",d.optBoolean("has_more")).put("page",page).put("canManage",cookieValue("DedeUserID").isNotEmpty()&&d.optJSONObject("info")?.optLong("mid")?.toString()==cookieValue("DedeUserID"))
+        return JSONObject().put("items",JSONArray().apply{for(i in 0 until rows.length()){val row=rows.getJSONObject(i);val bv=row.optString("bvid");put(JSONObject().put("aid",row.optLong("id").toString()).put("bvid",bv).put("title",cleanTitle(row.optString("title"))).put("owner",row.optJSONObject("upper")?.optString("name").orEmpty().take(100)).put("views",row.optJSONObject("cnt_info")?.optLong("play",-1)?:-1).put("duration",row.optLong("duration")).put("available",validBvid(bv)&&row.optString("title")!="已失效视频"))}}).put("hasMore",d.optBoolean("has_more")).put("page",page).put("canManage",cookieValue("DedeUserID").isNotEmpty()&&d.optJSONObject("info")?.optLong("mid")?.toString()==cookieValue("DedeUserID"))
     }
     fun video(bvid:String):BiliVideo {
         require(validBvid(bvid)){"视频BV号无效"}
         val d=request("x/web-interface/view",mapOf("bvid" to bvid))
         val cid=d.getLong("cid");require(cid in 1..999_999_999_999_999L)
-        return BiliVideo(bvid,cid,d.getLong("aid"),cleanTitle(d.getString("title")),d.getJSONObject("owner").getString("name").take(100),d.optLong("duration"))
+        return BiliVideo(bvid,cid,d.getLong("aid"),cleanTitle(d.getString("title")),d.getJSONObject("owner").getString("name").take(100),d.optLong("duration"),d.optJSONObject("stat")?.optLong("view",-1)?:-1)
     }
     /** One explicit order -> one set-style add; never removes from any other folder.
      * At most 10 folder pages (200 folders), 30s discovery budget, no write retries.
@@ -166,6 +167,22 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
         return JSONObject().put("removed",true)
     }
     private fun cookieValue(name:String)=cookie.split(';').map{it.trim()}.firstOrNull{it.startsWith("$name=")}?.substringAfter('=').orEmpty()
+    /** One 6-minute segment; independent cancellable call so toggling off cancels network work. */
+    suspend fun danmaku(cid:Long,segment:Int):List<BiliComment> = kotlinx.coroutines.suspendCancellableCoroutine { cont->
+        require(cid in 1..999_999_999_999_999L&&segment in 1..1000)
+        val url=apiBase.toHttpUrl().newBuilder().addPathSegments("x/v2/dm/web/seg.so").addQueryParameter("type","1").addQueryParameter("oid","$cid").addQueryParameter("segment_index","$segment").build()
+        val call=client.newCall(Request.Builder().url(url).header("User-Agent",UA).header("Referer","https://www.bilibili.com/").apply{if(cookie.isNotEmpty())header("Cookie",cookie)}.build())
+        cont.invokeOnCancellation{call.cancel()}
+        call.enqueue(object:okhttp3.Callback {
+            override fun onFailure(call:okhttp3.Call,e:java.io.IOException){if(cont.isActive)cont.resumeWith(Result.failure(IllegalStateException("弹幕连接失败，请关闭后重新开启")))}
+            override fun onResponse(call:okhttp3.Call,response:okhttp3.Response){
+                try{val rows=response.use{r->check(r.isSuccessful){"B站弹幕暂不可用"};val body=r.body?:error("弹幕响应为空");check(body.contentLength()<=2*1024*1024);check(!r.header("Content-Type").orEmpty().contains("json")){"B站弹幕要求验证或稍后重试"}
+                    val bytes=body.byteStream().use{input->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;check(out.size()+n<=2*1024*1024){"弹幕分段过大"};out.write(buffer,0,n)};out.toByteArray()};BiliDanmaku.decode(bytes)}
+                    if(cont.isActive)cont.resumeWith(Result.success(rows))
+                }catch(e:Exception){if(cont.isActive)cont.resumeWith(Result.failure(IllegalStateException("弹幕暂不可用，请关闭后重新开启")))}
+            }
+        })
+    }
     fun source(bvid:String,cid:Long):PlaySource {
         require(validBvid(bvid)&&cid>0){"视频标识无效"}
         val d=request("x/player/playurl",mapOf("bvid" to bvid,"cid" to cid.toString(),"qn" to "64","fnval" to "1","fnver" to "0","fourk" to "0","platform" to "html5"))

@@ -2,12 +2,13 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
     namespace = "com.pocketktv.app"
     compileSdk = 35
+    buildFeatures { buildConfig = true }
     defaultConfig {
         applicationId = "com.pocketktv.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "0.9.8"
+        versionCode = 32
+        versionName = "0.9.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
     }

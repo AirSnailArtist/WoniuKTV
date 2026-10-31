@@ -1,0 +1,1 @@
+function t(r){const e=Number(r);return r==null||!Number.isFinite(e)||e<0?"播放量暂不可用":e>=1e8?(e/1e8).toFixed(1).replace(/\.0$/,"")+"亿次播放":e>=1e4?(e/1e4).toFixed(1).replace(/\.0$/,"")+"万次播放":Math.floor(e)+"次播放"}export{t as f};

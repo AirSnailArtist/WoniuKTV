@@ -1,6 +1,6 @@
 # 窝牛家庭 KTV
 
-当前安装与构建说明见 [README.md](README.md)，最新交付见 [RELEASE-0.9.8.md](RELEASE-0.9.8.md)。
+当前安装与构建说明见 [README.md](README.md)，最新交付见 [RELEASE-0.9.9.md](RELEASE-0.9.9.md)。
 
 有问题请联系微信：**18538573855**。
 

@@ -55,3 +55,10 @@ The WBI key permutation and parameter signing behavior in `BilibiliClient.kt` we
 No shared application keys/secrets, APP signing, gRPC proxy, external credential service, or BV app UI is included. The HTTP client, bounded read-only pagination, QR session storage, source adapter and Woniu UI are local implementations. Only user-accessible video/favorite APIs are used; platform verification/permission errors are surfaced without retrying around them.
 
 Official external-player reference: https://player.bilibili.com/ . The current native integration does not embed that player or include danmaku.
+
+## 国内网盘协议参考（0.9.9）
+
+- OpenList quark_uc / aliyundrive： https://github.com/OpenListTeam/OpenList/tree/main/drivers （AGPL-3.0；仅参考公开请求协议，未直接复制Go驱动代码或嵌入服务）。
+- quark-drive： https://github.com/imeiming/quark-drive （参考登录会话与目录接口）。
+- BaiduPCS-Go： https://github.com/qjfoidnh/BaiduPCS-Go （参考Baidu网盘用户信息和PCS文件请求协议）。
+- 应用中的独立Kotlin适配器与实际验证边界见 DOMESTIC-DRIVES.md。

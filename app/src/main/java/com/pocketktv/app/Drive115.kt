@@ -13,7 +13,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-data class DriveEntry(val id: String, val parent: String, val name: String, val folder: Boolean, val pickCode: String, val size: Long)
+data class DriveEntry(val id: String, val parent: String, val name: String, val folder: Boolean, val pickCode: String, val size: Long, val remotePath:String="")
 data class DrivePage(val entries: List<DriveEntry>, val total: Int)
 data class LoginQr(val uid: String, val time: String, val sign: String, val content: String, val verifier: String? = null)
 data class PlaySource(val url: String, val headers: Map<String,String>)

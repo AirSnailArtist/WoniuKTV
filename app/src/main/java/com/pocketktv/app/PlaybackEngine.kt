@@ -29,10 +29,19 @@ class PlaybackEngine(context:Context,private val onProgress:(Long)->Unit,private
  private val appContext=context.applicationContext
  private val main=Handler(Looper.getMainLooper())
  private var channelMode="stereo"
+ private val audioSession=(appContext.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager).generateAudioSessionId()
+ private var enhancer:android.media.audiofx.LoudnessEnhancer?=null
+ var loudnessBoost=false;private set
+ val loudnessAvailable get()=audioSession>0
+ val decoderVolume get()=player.volume
+ fun setLoudnessBoost(enabled:Boolean):Boolean=try{
+  if(enabled){check(audioSession>0);val effect=enhancer?:android.media.audiofx.LoudnessEnhancer(audioSession).also{enhancer=it};effect.setTargetGain(600);effect.enabled=true}else enhancer?.enabled=false
+  loudnessBoost=enabled;true
+ }catch(_:RuntimeException){loudnessBoost=false;false}
  private var softwareVolume=100
  fun setPlaybackVolume(value:Int){softwareVolume=value.coerceIn(0,100);player.setVolume(softwareVolume)}
  val playbackVolume get()=softwareVolume
- private fun createCore()=LibVLC(appContext,arrayListOf("--quiet","--no-video-title-show","--network-caching=$NETWORK_CACHE_MS","--no-audio-time-stretch","--stereo-mode="+when(channelMode){"left"->3;"right"->4;else->1}))
+ private fun createCore()=LibVLC(appContext,arrayListOf("--quiet","--no-video-title-show","--network-caching=$NETWORK_CACHE_MS","--no-audio-time-stretch","--audiotrack-session-id=${audioSession.coerceAtLeast(0)}","--stereo-mode="+when(channelMode){"left"->3;"right"->4;else->1}))
  private var core=createCore()
  private var player=MediaPlayer(core)
  private var savedUrl="";private var savedHeaders=emptyMap<String,String>()
@@ -101,7 +110,7 @@ class PlaybackEngine(context:Context,private val onProgress:(Long)->Unit,private
  fun seekTo(positionMs:Long){if(active){val duration=correctedDuration;if(mpegTimeline){if(duration!=null)player.setPosition((positionMs.toFloat()/duration).coerceIn(0f,1f),false)else resumePosition=positionMs.coerceAtLeast(0)}else player.setTime(positionMs.coerceAtLeast(0),false)}}
  fun restart(){seekTo(0);resume()}
  fun stop(){probeJob?.cancel();probeJob=null;correctedDuration=null;mpegTimeline=false;active=false;fileId=null;main.removeCallbacks(ticker);player.stop();transport.reset();lastTracks=emptyList()}
- fun release(){if(released)return;stop();released=true;main.removeCallbacks(resizeAfterLayout);player.detachViews();player.release();core.release();transport.close();probeScope.cancel()}
+ fun release(){if(released)return;enhancer?.release();enhancer=null;stop();released=true;main.removeCallbacks(resizeAfterLayout);player.detachViews();player.release();core.release();transport.close();probeScope.cancel()}
  fun diagnosticStats():org.videolan.libvlc.interfaces.IMedia.Stats?{val media=player.media?:return null;return try{media.stats}finally{media.release()}}
  val selectedAudioTrackIndex get()=player.audioTracks.orEmpty().filter{it.id>=0}.indexOfFirst{it.id==player.audioTrack}
  fun audioTracks():List<String> = player.audioTracks.orEmpty().filter{it.id>=0}.mapIndexed{i,t->t.name?.takeIf{it.isNotBlank()}?:"音轨 ${i+1}"}

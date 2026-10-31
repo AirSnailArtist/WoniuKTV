@@ -12,7 +12,7 @@
         <span v-html="highlightedTitle"></span>
         <span class="tag" :class="tagClass">{{ tagText }}</span>
       </div>
-      <div class="s">{{ song.artist }}<span v-if="song.language"> · {{song.language}}</span><span v-if="song.edition"> · {{song.edition}}</span><span v-if="extra"> · {{ extra }}</span></div>
+      <div class="s">{{ song.artist }}<span v-if="song.language"> · {{song.language}}</span><span v-if="song.edition"> · {{song.edition}}</span><span v-if="song.source==='bilibili'"> · {{formatVideoViews(song.views)}}</span><span v-if="extra"> · {{ extra }}</span></div>
     </div>
     <!-- 收藏按钮 / Favorite button -->
     <button class="favorite-btn" :class="{ on: favorites.has(song.id) }" :disabled="favoriteBusy"
@@ -37,6 +37,7 @@
 </template>
 
 <script setup>
+import {formatVideoViews} from '../utils/videoViews'
 /**
  * SongRow 组件 —— 歌单列表行。
  * 支持排名展示、关键词高亮、媒体类型标签、收藏切换和点歌操作。

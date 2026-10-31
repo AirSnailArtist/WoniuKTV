@@ -8,10 +8,10 @@ vi.mock('swiper/vue',()=>({
 let app
 const flush=async()=>{await nextTick();await new Promise(r=>setTimeout(r,20));await nextTick()}
 afterEach(()=>{app?.unmount();document.body.innerHTML='';vi.unstubAllGlobals()})
-async function setup(){
+async function setup(controls=true){
   vi.stubGlobal('requestAnimationFrame',fn=>setTimeout(fn,0))
   const items=ref([{id:'old-a'},{id:'old-b'}]),root=document.createElement('div');document.body.append(root)
-  app=createApp({render:()=>h(PagedCarousel,{items:items.value,pageSize:2,queryKey:'same'},{default:({items})=>items.map(item=>h('button',{key:item.id},item.id))})});app.mount(root);await flush()
+  app=createApp({render:()=>h(PagedCarousel,{items:items.value,pageSize:2,queryKey:'same',controls},{default:({items})=>items.map(item=>h('button',{key:item.id},item.id))})});app.mount(root);await flush()
   root.querySelectorAll('.swiper-slide button')[1].focus()
   return {items,root}
 }
@@ -23,4 +23,8 @@ it('does not steal focus if the user moves out while replacement cards render',a
   const {items}=await setup();const outside=document.createElement('button');document.body.append(outside)
   items.value=[{id:'new-a'},{id:'new-b'}];await nextTick();outside.focus();await flush()
   expect(document.activeElement).toBe(outside)
+})
+
+it('keeps a content-edge right press inside a home panel even without paging buttons',async()=>{
+ const {root}=await setup(false);const event=new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true});root.querySelectorAll('.swiper-slide button')[1].dispatchEvent(event);expect(event.defaultPrevented).toBe(true)
 })

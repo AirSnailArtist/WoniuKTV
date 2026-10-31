@@ -39,7 +39,7 @@ internal object SongNames {
 }
 
 /** Android replacement for Home KTV's PostgreSQL library + queue repositories. */
-class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLiteOpenHelper(context,databaseName,null,6) {
+class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLiteOpenHelper(context,databaseName,null,8) {
     val learningDeviceId:String=context.getSharedPreferences("smart-local",Context.MODE_PRIVATE).let{prefs->
         prefs.getString("device",null)?:java.util.UUID.randomUUID().toString().also{prefs.edit().putString("device",it).commit()}
     }
@@ -50,7 +50,7 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
         while(offset<total){
             currentCoroutineContext().ensureActive()
             val entries=readableDatabase.rawQuery("SELECT * FROM songs ORDER BY id LIMIT 500 OFFSET ?",arrayOf(offset.toString())).use{c->buildList{while(c.moveToNext())add(song(c))}}
-            val rows=entries.filter{it.metadataProvider!="bilibili"}.map{entry->entry.id to metadataValues(entry.name,entry.path.substringBeforeLast('/'),rule,entry)}
+            val rows=entries.filter{it.metadataProvider!="bilibili"&&it.metadataProvider !in DomesticDrive.labels}.map{entry->entry.id to metadataValues(entry.name,entry.path.substringBeforeLast('/'),rule,entry)}
             val sql=writableDatabase;sql.beginTransaction()
             try{for((id,values) in rows){sql.update("songs",values,"id=?",arrayOf(id));indexArtists(id,values.getAsString("artist"))};sql.setTransactionSuccessful()}finally{sql.endTransaction()}
             offset+=entries.size;onProgress(offset,total)
@@ -83,6 +83,8 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
         db.execSQL("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
         createArtistIndex(db)
         SmartLibrary.create(db)
+        SmartCollections.create(db)
+        MusicPlaylists.create(db)
         ArtistDirectory.create(db)
         db.execSQL("CREATE INDEX title_key_idx ON songs(title_key)")
         db.execSQL("CREATE INDEX favorite_idx ON songs(favorite)")
@@ -94,6 +96,8 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
         if(oldVersion<2)listOf("language","genre","edition","source_group","metadata_provider").forEach{db.execSQL("ALTER TABLE songs ADD COLUMN $it TEXT NOT NULL DEFAULT ''")}
         if(oldVersion<5)SmartLibrary.create(db)
         if(oldVersion<6)ArtistDirectory.create(db)
+        if(oldVersion<7)SmartCollections.create(db)
+        if(oldVersion<8)MusicPlaylists.create(db)
     }
     private fun createArtistIndex(sql:SQLiteDatabase){
         sql.execSQL("CREATE TABLE IF NOT EXISTS song_artists(song_id TEXT NOT NULL,artist TEXT NOT NULL,PRIMARY KEY(song_id,artist))")
@@ -166,7 +170,7 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
     }
     /** Offline catalog audit only; UI pages use ArtistDirectory.page. */
     fun artistCounts(scope:String="all"):List<Pair<String,Int>> = readableDatabase.rawQuery("SELECT name,song_count FROM artist_counts WHERE scope=? ORDER BY rank,name",arrayOf(scope)).use{c->buildList{while(c.moveToNext())add(c.getString(0) to c.getInt(1))}}
-    fun titleCandidates(key:String):List<Song> = readableDatabase.rawQuery("SELECT * FROM songs WHERE title_key=? LIMIT 80",arrayOf(key)).use{c->buildList{while(c.moveToNext())add(song(c))}}
+    fun titleCandidates(key:String,limit:Int=80):List<Song> = readableDatabase.rawQuery("SELECT * FROM songs WHERE title_key=? LIMIT ?",arrayOf(key,limit.coerceIn(1,200).toString())).use{c->buildList{while(c.moveToNext())add(song(c))}}
     fun songsByIds(ids:List<String>):List<Song>{
         require(ids.size<=200)
         if(ids.isEmpty())return emptyList()
@@ -185,7 +189,19 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
         }
         val sql=writableDatabase;sql.beginTransactionNonExclusive()
         try{sql.insertWithOnConflict("songs",null,values,SQLiteDatabase.CONFLICT_IGNORE);sql.update("songs",values,"id=?",arrayOf(video.id));indexArtists(video.id,video.owner);sql.setTransactionSuccessful()}finally{sql.endTransaction()}
+        if(video.views>=0)setting("bili_views:"+video.id,video.views.toString(),true)
         return song(video.id)?:error("视频保存失败")
+    }
+    fun rememberDomestic(provider:String,account:String,entry:DriveEntry):Song {
+        val id=DomesticDrive.songId(provider,account,entry.id)
+        val uri=android.net.Uri.Builder().scheme("woniu-cloud").authority(provider).appendPath(account).appendPath(entry.id).apply{if(provider=="baidu"){require(entry.remotePath.startsWith("/")&&entry.remotePath.length<=4096);appendQueryParameter("remote",entry.remotePath)}}.build().toString()
+        val previous=song(id);require(previous==null||(previous.metadataProvider==provider&&previous.path==uri)){"网盘编号冲突，未覆盖原曲库"}
+        val values=metadataValues(entry.name,"/"+DomesticDrive.labels.getValue(provider),setting("name_rule","artist_title"),previous).apply{
+            put("id",id);put("name",entry.name);put("pick",entry.id);put("path",uri);put("metadata_provider",provider);put("source_group",DomesticDrive.labels.getValue(provider))
+        }
+        val sql=writableDatabase
+        sql.insertWithOnConflict("songs",null,values,SQLiteDatabase.CONFLICT_IGNORE);sql.update("songs",values,"id=?",arrayOf(id));indexArtists(id,values.getAsString("artist"))
+        return song(id)?:error("网盘歌曲保存失败")
     }
     private fun song(c:Cursor):Song {
         fun text(name:String)=c.getString(c.getColumnIndexOrThrow(name))

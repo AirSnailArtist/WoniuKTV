@@ -29,7 +29,7 @@ function restoreKeyboardFocus(){
  target?.focus({preventScroll:true})
 }
 async function remotePage(event){
- if(!props.controls)return // Home panels use spatial navigation across both columns.
+ if(event.target.closest('footer'))return // Paging buttons keep normal spatial focus; song content stays in this panel.
  if(event.target.matches('input,textarea'))return
  if(!['ArrowLeft','ArrowRight'].includes(event.key))return
  const slide=event.target.closest('.swiper-slide')

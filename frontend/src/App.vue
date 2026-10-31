@@ -1,5 +1,5 @@
 <template>
-  <div class="ktv-shell" :class="{'bili-browse':$route.name==='bilibili'}">
+  <div class="ktv-shell" :class="{'bili-browse':['bilibili','musicPlaylists'].includes($route.name)}">
     <header class="app-header" :class="{'home-header':$route.name==='home'}"><router-link class="brand" :to="{name:'home'}"><span class="brand-icon"><img :src="brandLogo" alt=""/></span><span><b>窝牛</b><small>PRIVATE KTV</small></span></router-link><h1 v-if="$route.name==='home'" class="home-topline">今晚，唱你喜欢的。</h1><span v-else class="library-status"><i/>{{libraryCount?libraryCount.toLocaleString()+' 首私人曲库':'你的家庭点歌台'}}</span><button class="search-entry" @click="$router.push({name:'search'})"><Search :size="20"/>搜索歌名、歌手 <kbd>拼音</kbd></button><button class="header-tool" @click="openFit">画面适配</button><button class="header-tool phone-entry" @click="phone"><QrCode :size="22"/>手机点歌</button><button class="header-tool theme-entry" @click="toggleTheme"><Sun v-if="theme==='dark'" :size="21"/><Moon v-else :size="21"/>{{theme==='dark'?'日间':'夜间'}}</button><button class="header-tool settings-entry" aria-label="曲库与账号设置" @click="manage"><Settings :size="22"/></button></header>
     <nav class="primary-nav"><router-link v-for="item in navigation" :key="item.label" :to="item.to" :class="{selected:item.active($route)}"><component :is="item.icon" :size="18" :stroke-width="1.7"/>{{item.label}}<span v-if="item.queue&&player.queueCount" class="count">{{player.queueCount}}</span></router-link></nav>
     <main class="workspace-content"><router-view/></main>
@@ -29,9 +29,9 @@ function closeQueue(){queueOpen.value=false;previousFocus?.focus?.()}
 const removeQueueGuard=router.beforeEach(to=>{if(to.name==='queue'){if(queueOpen.value){closeQueue();return false}previousFocus=document.activeElement;queueOpen.value=true;nextTick(()=>queueClose.value?.focus());return false}})
 onUnmounted(removeQueueGuard)
 const player=usePlayerStore(),user=useUserStore(),favorites=useFavoritesStore(),{toast}=useToast(),libraryCount=ref(0)
-const theme=ref(localStorage.getItem('woniu-theme')||'dark');document.documentElement.dataset.theme=theme.value
-function toggleTheme(){theme.value=theme.value==='dark'?'light':'dark';document.documentElement.dataset.theme=theme.value;localStorage.setItem('woniu-theme',theme.value);window.Woniu?.setTheme?.(theme.value)}
-const navigation=[{label:'首页',icon:House,to:{name:'home'},active:r=>r.name==='home'},{label:'榜单',icon:Library,to:{name:'ranking'},active:r=>r.name==='ranking'},{label:'歌名点歌',icon:Music2,to:{name:'search'},active:r=>r.name==='search'||r.name==='artist'},{label:'歌星点歌',icon:Mic2,to:{name:'browse',query:{tab:'artists'}},active:r=>r.name==='browse'&&(!r.query.tab||r.query.tab==='artists')},{label:'语种',icon:Globe2,to:{name:'browse',query:{tab:'languages'}},active:r=>r.name==='browse'&&r.query.tab==='languages'},{label:'分类',icon:Library,to:{name:'browse',query:{tab:'tags'}},active:r=>r.name==='browse'&&r.query.tab==='tags'},{label:'B站点歌',icon:Globe2,to:{name:'bilibili'},active:r=>r.name==='bilibili'},{label:'收藏',icon:Heart,to:{name:'favorites'},active:r=>r.name==='favorites'},{label:'已点歌曲',icon:ListMusic,to:{name:'queue'},active:r=>r.name==='queue',queue:true}]
+const theme=ref(sessionStorage.getItem('woniu-session-theme')||'light');document.documentElement.dataset.theme=theme.value
+function toggleTheme(){theme.value=theme.value==='dark'?'light':'dark';document.documentElement.dataset.theme=theme.value;sessionStorage.setItem('woniu-session-theme',theme.value);window.Woniu?.setTheme?.(theme.value)}
+const navigation=[{label:'首页',icon:House,to:{name:'home'},active:r=>r.name==='home'},{label:'榜单',icon:Library,to:{name:'ranking'},active:r=>r.name==='ranking'},{label:'歌名点歌',icon:Music2,to:{name:'search'},active:r=>r.name==='search'||r.name==='artist'},{label:'歌星点歌',icon:Mic2,to:{name:'browse',query:{tab:'artists'}},active:r=>r.name==='browse'&&(!r.query.tab||r.query.tab==='artists')},{label:'语种',icon:Globe2,to:{name:'browse',query:{tab:'languages'}},active:r=>r.name==='browse'&&r.query.tab==='languages'},{label:'分类',icon:Library,to:{name:'browse',query:{tab:'tags'}},active:r=>r.name==='browse'&&r.query.tab==='tags'},{label:'B站点歌',icon:Globe2,to:{name:'bilibili'},active:r=>r.name==='bilibili'},{label:'歌单',icon:Music2,to:{name:'musicPlaylists'},active:r=>r.name==='musicPlaylists'},{label:'收藏',icon:Heart,to:{name:'favorites'},active:r=>r.name==='favorites'},{label:'已点歌曲',icon:ListMusic,to:{name:'queue'},active:r=>r.name==='queue',queue:true}]
 async function control(action,params={}){try{await api.control(action,params,user.clientToken)}catch(e){toast(e.message)}}
 function manage(){window.Woniu?.openManagement()}
 function phone(){phonePrevious=document.activeElement;phoneOpen.value=true;phoneImage.value='';phoneError.value='';nextTick(()=>{phoneClose.value?.focus();loadPhone()})}
@@ -44,7 +44,7 @@ function loadPhone(){
   phoneImage.value=result.image
  }catch(e){phoneError.value=e.message||'手机点歌暂不可用'}finally{phoneBusy.value=false}},0)
 }
-onMounted(()=>{window.Woniu?.setTheme?.(theme.value);player.connect();favorites.load(user.clientToken).catch(()=>{});if(window.Woniu){try{libraryCount.value=JSON.parse(window.Woniu.request('/library/status','GET','')).data.songs}catch{}}})
-onUnmounted(()=>player.disconnect())
+onMounted(()=>{window.addEventListener('woniu-open-phone',phone);window.Woniu?.setTheme?.(theme.value);player.connect();favorites.load(user.clientToken).catch(()=>{});if(window.Woniu){try{libraryCount.value=JSON.parse(window.Woniu.request('/library/status','GET','')).data.songs}catch{}}})
+onUnmounted(()=>{window.removeEventListener('woniu-open-phone',phone);player.disconnect()})
 </script>
 <style src="./styles/stage.css"></style>

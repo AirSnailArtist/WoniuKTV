@@ -58,6 +58,7 @@ class SmartLibrary(private val db:LibraryDb, private val device:String=db.learni
         result.put("until",parts.maxOfOrNull{it.optLong("until")}?:0L)
         val values=ContentValues().apply{put("account",account);put("kind",kind);put("key",key);put("mass",result.optDouble("mass",0.0));put("updated_at",result.optLong("updated"));put("data",result.toString())}
         sql.insertWithOnConflict("smart_scores",null,values,SQLiteDatabase.CONFLICT_REPLACE)
+        if(kind=="song")SmartCollections.sync(db,account,key,result)
     }
     private fun mutate(account:String,kind:String,key:String,change:(JSONObject)->Unit) {
         val (revision,data)=local(account,kind,key);change(data);data.put("updated",now())
@@ -73,7 +74,7 @@ class SmartLibrary(private val db:LibraryDb, private val device:String=db.learni
         data.put("mass",data.optDouble("mass",0.0)+earned*massClock(now()))
         if(earned>0)data.put("day_points",data.optDouble("day_points",0.0)+earned)
     }
-    private fun songFacts(data:JSONObject,song:Song){data.put("song_id",song.id).put("title",song.title).put("artist",song.artist).put("language",song.language).put("genre",song.genre)}
+    private fun songFacts(data:JSONObject,song:Song){data.put("song_id",song.id).put("title",song.title).put("artist",song.artist).put("language",song.language).put("genre",song.genre).put("provider",song.metadataProvider)}
     fun ordered(song:Song,origin:String="")=transaction {
         val a=account();val key=workKey(song)
         mutate(a,"song",key){j->songFacts(j,song);j.increment("orders");if(now()-j.optLong("last_order")>60_000)reward(j,1.0);j.put("last_order",now())}
@@ -174,7 +175,7 @@ class SmartLibrary(private val db:LibraryDb, private val device:String=db.learni
         // Reserve discovery space instead of endlessly reinforcing already-familiar songs.
         sorted.filter{it.origin in listOf("artist","style","explore")}.take(20).forEach{if(chosen.size<3)take(it)}
         for(pick in sorted)if(chosen.size<12)take(pick)
-        val list=JSONArray();for(pick in chosen){val s=pick.song;list.put(JSONObject().put("song",JSONObject().put("id",s.id).put("title",s.title).put("artist",s.artist).put("language",s.language).put("genre",s.genre)).put("reason",pick.reason).put("origin",pick.origin))}
+        val list=JSONArray();for(pick in chosen){val s=pick.song;list.put(JSONObject().put("song",JSONObject().put("id",s.id).put("source",if(s.metadataProvider=="bilibili")"bilibili" else s.metadataProvider.takeIf{it in DomesticDrive.labels}?:"115").put("views",if(s.metadataProvider=="bilibili")db.setting("bili_views:"+s.id).toLongOrNull()?:-1 else -1).put("title",s.title).put("artist",s.artist).put("language",s.language).put("genre",s.genre)).put("reason",pick.reason).put("origin",pick.origin))}
         val result=JSONObject().put("items",list).put("learning",history.isNotEmpty()).put("updatedAt",now()).put("examined",examined).put("elapsedMs",SystemClock.elapsedRealtime()-start).put("backupPath",db.setting("catalog_backup_path"))
         require(db.setting("account")==a){"账号已切换，请刷新推荐"}
         cachedKey=cacheKey;cachedAt=SystemClock.elapsedRealtime();cached=result.toString();return result

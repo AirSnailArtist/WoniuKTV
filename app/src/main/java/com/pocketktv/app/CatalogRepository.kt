@@ -5,12 +5,15 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ensureActive
 /** Application service shared by management UI and future source adapters. No listening port needed. */
 class CatalogRepository(private val db:LibraryDb,private val drive:Drive115,private val cacheDir:File){
+ companion object {
+  fun backupFileName(now:java.util.Date=java.util.Date()):String="窝牛KTV-完整备份-"+java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS",java.util.Locale.ROOT).format(now)+"-v"+BuildConfig.VERSION_NAME+".json"
+ }
  suspend fun organize(progress:(Int,Int)->Unit={_,_->})=withContext(Dispatchers.IO){db.reparseMetadata(progress)}
  suspend fun backup(progress:(String)->Unit={}):String {
   val expectedAccount=drive.accountId;require(db.setting("account")==expectedAccount&&expectedAccount.isNotBlank()){"请重新登录当前曲库账号"}
   require(db.setting("scan_done")=="1"){"请等待扫描完成再备份"}
   progress("正在整理曲库…");organize()
-  val name="Woniu-catalog-${java.text.SimpleDateFormat("yyyyMMdd-HHmmss",java.util.Locale.ROOT).format(java.util.Date())}.json"
+  val name=backupFileName()
   val file=File(cacheDir,name)
   val learningRevision=db.setting("smart_revision","0")
   val count=withContext(Dispatchers.IO){CatalogCodec.export(db,file,expectedAccount)}

@@ -11,13 +11,14 @@
   <p v-if="error" class="bili-error" role="alert">{{error}} <button @click="loadPage(page)">重试</button></p>
   <div ref="resultsRoot" class="bili-results" :aria-busy="busy">
    <p v-if="!items.length&&!busy&&!error" class="bili-empty">{{tab==='search'?'输入歌名或歌手开始搜索，也可以直接输入BV号播放。':folder?'这个收藏夹还没有视频，可以先搜索歌曲点播。':'登录后查看自己的收藏夹，或输入其他用户UID浏览公开收藏夹。'}}</p>
-   <div v-for="item in items" :key="folderMode?item.id:item.aid||item.bvid" class="bili-entry"><button class="bili-card" :disabled="!folderMode&&(!item.available||ordering===item.bvid)" @click="folderMode?openFolder(item):order(item)"><span v-if="folderMode" class="bili-card-icon">收藏夹</span><span class="bili-card-copy"><b>{{item.title}}</b><small>{{folderMode?item.count+' 个视频':'UP主 · '+(item.owner||'未知')}}</small></span><span class="bili-card-action">{{folderMode?'打开 ›':!item.available?'已失效':ordering===item.bvid?'正在点选':ordered.has(item.bvid)?'已点 · 收藏':'+ 点播'}}</span></button><button v-if="canManage&&!folderMode&&item.aid" class="bili-remove" :disabled="!!removing" :aria-label="'取消收藏 '+item.title" @click="removeFavorite(item)">{{removing===item.aid?'正在取消':'取消收藏'}}</button></div>
+   <div v-for="item in items" :key="folderMode?item.id:item.aid||item.bvid" class="bili-entry"><button class="bili-card" :disabled="!folderMode&&(!item.available||ordering===item.bvid)" @click="folderMode?openFolder(item):order(item)"><span v-if="folderMode" class="bili-card-icon">收藏夹</span><span class="bili-card-copy"><b>{{item.title}}</b><small>{{folderMode?item.count+' 个视频':'UP主 · '+(item.owner||'未知')+' · '+formatVideoViews(item.views)}}</small></span><span class="bili-card-action">{{folderMode?'打开 ›':!item.available?'已失效':ordering===item.bvid?'正在点选':ordered.has(item.bvid)?'已点 · 收藏':'+ 点播'}}</span></button><button v-if="canManage&&!folderMode&&item.aid" class="bili-remove" :disabled="!!removing" :aria-label="'取消收藏 '+item.title" @click="removeFavorite(item)">{{removing===item.aid?'正在取消':'取消收藏'}}</button></div>
   </div>
   <footer class="bili-pages"><button :disabled="busy||page<=1" @click="loadPage(page-1)">上一页</button><span>第 {{page}} 页 · 点播自动收藏到「窝牛KTV」</span><button :disabled="busy||!hasMore" @click="loadPage(page+1)">下一页</button></footer>
   <div v-if="loginOpen" class="fit-mask" @click.self="closeLogin" @keydown.esc.stop="closeLogin"><section class="fit-dialog phone-dialog" role="dialog" aria-modal="true" aria-label="B站扫码登录"><h2>使用哔哩哔哩 App 扫码登录</h2><div class="phone-content"><div class="phone-qr"><img v-if="loginImage" :src="loginImage" alt="B站登录二维码"/><span v-else>正在获取二维码…</span></div><div><p role="status">{{loginMessage}}</p><p class="phone-hint">登录信息仅保存在当前设备。</p><div class="fit-actions"><button @click="openLogin">刷新二维码</button><button ref="loginClose" aria-label="关闭" @click="closeLogin">关闭</button></div></div></div></section></div>
  </section>
 </template>
 <script setup>
+import {formatVideoViews} from '../utils/videoViews'
 import {computed,nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
 import {useRoute} from 'vue-router'
 import {biliRequest,folderReference} from '../api/bilibili'

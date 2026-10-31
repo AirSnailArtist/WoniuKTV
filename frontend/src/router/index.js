@@ -6,6 +6,7 @@ export default createRouter({history:createWebHashHistory(),routes:[
 {path:'/home',name:'home',component:()=>import('../views/HomeView.vue')},
 {path:'/search',name:'search',component:()=>import('../views/SearchView.vue')},
 {path:'/bilibili',name:'bilibili',component:()=>import('../views/BilibiliView.vue')},
+{path:'/music-playlists',name:'musicPlaylists',component:()=>import('../views/MusicPlaylistsView.vue')},
 {path:'/favorites',name:'favorites',component:()=>import('../views/FavoritesView.vue')},
 {path:'/browse',name:'browse',component:()=>import('../views/CategoryBrowseView.vue')},
 {path:'/artist/:name',name:'artist',component:()=>import('../views/ArtistView.vue')},
