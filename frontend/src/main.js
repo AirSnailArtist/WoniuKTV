@@ -4,6 +4,8 @@ import router from './router'
 import App from './App.vue'
 import './styles/theme.css'
 import './remote'
+import {installViewportFit} from './viewportFit'
+installViewportFit()
 
 /**
  * H5 应用启动入口，注册 Pinia、路由和根组件。

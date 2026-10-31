@@ -1,10 +1,11 @@
-<template><div ref="root" class="paged-carousel" @keydown="remotePage"><div v-if="!pageRows.length" class="carousel-empty">{{error||'加载中…'}}</div><Swiper v-else :modules="[FreeMode,Virtual]" :slides-per-view="1" :space-between="20" :speed="320" :free-mode="{enabled:true,momentum:false,sticky:false}" :virtual="{addSlidesBefore:1,addSlidesAfter:2}" :watch-slides-progress="true" :threshold="5" :resistance-ratio="0.3" @swiper="setSwiper" @slide-change-transition-end="restoreKeyboardFocus" @active-index-change="changed" @reach-end="approach"><SwiperSlide v-for="(rows,i) in pageRows" :key="queryKey+':'+i" :virtual-index="i"><div class="carousel-cells" :style="{gridTemplateColumns:`repeat(${columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${Math.ceil(pageSize/columns)},minmax(0,1fr))`}"><slot :items="rows" :index="i"/></div></SwiperSlide></Swiper><footer v-if="controls"><button :disabled="!current" @click="previous">上一页</button><span>第 {{current+1}} 页<span v-if="last!==null"> / {{last+1}}</span></span><button :disabled="last!==null&&current>=last" @click="next">下一页</button><small>拖动跟手 · 松手即停</small></footer></div></template>
+<template><div ref="root" class="paged-carousel" @keydown="remotePage"><div v-if="!pageRows.length" class="carousel-empty">{{error||'加载中…'}}</div><Swiper v-else :modules="[FreeMode,Virtual]" :slides-per-view="1" :space-between="20" :speed="240" :long-swipes-ratio="0.18" :touch-ratio="touchRatio" :free-mode="{enabled:false}" :virtual="{addSlidesBefore:1,addSlidesAfter:2}" :watch-slides-progress="true" :threshold="5" :resistance-ratio="0.3" @swiper="setSwiper" @slide-change-transition-end="restoreKeyboardFocus" @active-index-change="changed" @reach-end="approach"><SwiperSlide v-for="(rows,i) in pageRows" :key="queryKey+':'+i" :virtual-index="i"><div class="carousel-cells" :style="{gridTemplateColumns:`repeat(${columns},minmax(0,1fr))`,gridTemplateRows:`repeat(${Math.ceil(pageSize/columns)},minmax(0,1fr))`}"><slot :items="rows" :index="i"/></div></SwiperSlide></Swiper><footer v-if="controls"><button :disabled="!current" @click="previous">上一页</button><span>第 {{current+1}} 页<span v-if="last!==null"> / {{last+1}}</span></span><button :disabled="last!==null&&current>=last" @click="next">下一页</button><small>拖动跟手 · 松手即停</small></footer></div></template>
 <script setup>
 import {ref,watch,nextTick,onBeforeUnmount} from 'vue'
 import {Swiper,SwiperSlide} from 'swiper/vue';import {FreeMode,Virtual} from 'swiper/modules'
 import 'swiper/css';import 'swiper/css/free-mode';import 'swiper/css/virtual'
 const props=defineProps({items:{type:Array,default:null},loader:Function,queryKey:{type:String,default:''},pageSize:{type:Number,default:8},columns:{type:Number,default:2},controls:{type:Boolean,default:true}})
-const root=ref(null);let keyboardFocusIndex=null,keyboardEntryRight=true
+const root=ref(null);let keyboardFocusIndex=null,keyboardEntryRight=true,keyboardSelector=null
+const touchRatio=ref(1/(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale'))||1))
 const pageRows=ref([]),current=ref(0),last=ref(null),error=ref('');let swiper,epoch=0,wanted=2,working=false,buttonBusy=false
 function setSwiper(s){swiper=s;changed(s)}
 function changed(s){current.value=s.activeIndex;prefetch(s.activeIndex+2)}
@@ -16,7 +17,7 @@ async function prefetch(index){if(!props.loader)return;wanted=Math.max(wanted,in
 const focusSelector='button:not(:disabled),a[href],input:not(:disabled),[tabindex="0"]'
 function restoreKeyboardFocus(){
  if(keyboardFocusIndex===null)return
- const controls=[...(root.value?.querySelector('.swiper-slide-active')?.querySelectorAll(focusSelector)||[])].filter(x=>x.getClientRects().length)
+ const controls=[...(root.value?.querySelector('.swiper-slide-active')?.querySelectorAll(keyboardSelector||focusSelector)||[])].filter(x=>x.getClientRects().length)
  let target=controls[Math.min(keyboardFocusIndex,controls.length-1)]
  if(target){
   const rect=target.getBoundingClientRect()
@@ -24,7 +25,7 @@ function restoreKeyboardFocus(){
   row.sort((a,b)=>a.getBoundingClientRect().left-b.getBoundingClientRect().left)
   target=keyboardEntryRight?row[0]:row[row.length-1]
  }
- keyboardFocusIndex=null
+ keyboardFocusIndex=null;keyboardSelector=null
  target?.focus({preventScroll:true})
 }
 async function remotePage(event){
@@ -35,7 +36,7 @@ async function remotePage(event){
  if(slide){
   const rect=event.target.getBoundingClientRect(),right=event.key==='ArrowRight'
   const neighbor=[...slide.querySelectorAll(focusSelector)].some(item=>{
-   if(item===event.target||!item.getClientRects().length)return false
+   if(item===event.target||(event.target.matches('.songrow')&&event.target.contains(item))||!item.getClientRects().length)return false
    const r=item.getBoundingClientRect()
    const dx=r.left+r.width/2-(rect.left+rect.width/2)
    return (right?dx:-dx)>=3&&r.top<rect.top+rect.height&&r.top+r.height>rect.top
@@ -44,13 +45,14 @@ async function remotePage(event){
  }
  event.preventDefault();event.stopPropagation()
  if(event.repeat||buttonBusy||swiper?.animating)return
- const controls=[...(event.target.closest('.swiper-slide')?.querySelectorAll(focusSelector)||[])]
+ keyboardSelector=event.target.matches('.songrow')?'.songrow[tabindex]':focusSelector
+ const controls=[...(event.target.closest('.swiper-slide')?.querySelectorAll(keyboardSelector)||[])]
  keyboardFocusIndex=Math.max(0,controls.indexOf(event.target));keyboardEntryRight=event.key==='ArrowRight'
  if(event.key==='ArrowRight')await next();else previous()
  await nextTick()
  if(!swiper?.animating)restoreKeyboardFocus()
 }
-function previous(){swiper?.slidePrev(320)}async function next(){if(buttonBusy)return;buttonBusy=true;try{await prefetch(current.value+1);if(current.value+1<pageRows.value.length)swiper?.slideNext(320)}finally{buttonBusy=false}}
+function previous(){swiper?.slidePrev(240)}async function next(){if(buttonBusy)return;buttonBusy=true;try{await prefetch(current.value+1);if(current.value+1<pageRows.value.length)swiper?.slideNext(240)}finally{buttonBusy=false}}
 async function reset(nextState,previousState){
  const previousFocus=document.activeElement,slide=previousFocus?.closest('.swiper-slide-active')
  const focusIndex=slide&&root.value?.contains(previousFocus)?[...slide.querySelectorAll(focusSelector)].indexOf(previousFocus):-1
@@ -77,7 +79,9 @@ async function reset(nextState,previousState){
 }
 // Polling can return a new array with identical contents. Keep the user's
 // partially dragged position unless the query or actual records changed.
-watch([()=>props.queryKey,()=>props.items===null?null:JSON.stringify(props.items)],reset,{immediate:true});onBeforeUnmount(()=>epoch++)
+function viewportChanged(){touchRatio.value=1/(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale'))||1);nextTick(()=>{swiper?.update();swiper?.slideTo(current.value,0)})}
+window.addEventListener('woniu-viewport-fit',viewportChanged)
+watch([()=>props.queryKey,()=>props.items===null?null:JSON.stringify(props.items)],reset,{immediate:true});onBeforeUnmount(()=>{epoch++;window.removeEventListener('woniu-viewport-fit',viewportChanged)})
 defineExpose({next,previous})
 </script>
 <style scoped>.paged-carousel{display:flex;flex-direction:column;min-height:0;height:100%;width:100%;overflow:hidden}.swiper{flex:1;min-height:0;width:100%;margin:0}.swiper-slide{height:100%;overflow:hidden}.carousel-cells{height:100%;display:grid;column-gap:22px;align-content:stretch;overflow:hidden}.carousel-cells:empty:after{content:'暂无歌曲';color:var(--dim);font-size:16px;padding:20px}.carousel-empty{flex:1;display:grid;place-items:center;color:var(--dim)}footer{height:41px;flex:none;display:flex;align-items:center;justify-content:center;gap:22px;font-size:12px}footer button{min-height:34px;padding:7px 22px;border-radius:9px;background:var(--panel2);color:var(--gold)}footer small{font-size:10px;color:var(--dim2)}:deep(.songrow){min-height:0!important;height:100%;padding-top:4px;padding-bottom:4px}</style>

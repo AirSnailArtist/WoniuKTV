@@ -1,5 +1,5 @@
 <template>
-  <div class="songrow">
+  <div class="songrow" role="button" tabindex="0" :aria-label="(isOrdered?'已点：':'点歌：')+song.title" @click="onRowClick">
     <!-- 排名区域 / Rank area -->
     <span v-if="rank" class="rank" :class="{ top: rank <= 3 }">{{ rank }}</span>
     <div class="cover" :class="{ empty: !song.coverUrl }">
@@ -16,11 +16,11 @@
     </div>
     <!-- 收藏按钮 / Favorite button -->
     <button class="favorite-btn" :class="{ on: favorites.has(song.id) }" :disabled="favoriteBusy"
-            :aria-label="favorites.has(song.id) ? '取消收藏' : '收藏'" @click="toggleFavorite">
+            :aria-label="favorites.has(song.id) ? '取消收藏' : '收藏'" @click.stop="toggleFavorite">
       <Heart :size="19" :fill="favorites.has(song.id) ? 'currentColor' : 'none'" />
     </button>
     <!-- 点歌按钮 / Order song button -->
-    <button class="order-btn" :class="{done:isOrdered}" :aria-disabled="isOrdered" :aria-label="isOrdered?'已点':'点歌'" @click="isOrdered?toast('这首歌已点'):$emit('order',song)"><Check v-if="isOrdered" :size="18"/><Plus v-else :size="22"/><span v-if="isOrdered" class="ordered-label">已点</span></button>
+    <button class="order-btn" :class="{done:isOrdered}" :aria-disabled="isOrdered" :aria-label="isOrdered?'已点':'点歌'" @click.stop="orderSong"><Check v-if="isOrdered" :size="18"/><Plus v-else :size="22"/><span v-if="isOrdered" class="ordered-label">已点</span></button>
   </div>
   <Teleport to="body">
     <div v-if="playlistOpen" class="playlist-mask" @click.self="closePlaylistPicker">
@@ -67,12 +67,14 @@ const props = defineProps({
 })
 
 /** 触发点歌事件 / Emits order song event */
-defineEmits(['order'])
+const emit=defineEmits(['order'])
 const favorites = useFavoritesStore()
 const player=usePlayerStore()
 const isOrdered=computed(()=>player.orderedSongIds.has(String(props.song.id)))
 const user = useUserStore()
 const { toast } = useToast()
+function onRowClick(event){if(event.target.closest('button,a,input'))return;orderSong()}
+function orderSong(){if(isOrdered.value)toast('这首歌已点');else emit('order',props.song)}
 const favoriteBusy = ref(false)
 const playlistOpen = ref(false)
 const playlistLoading = ref(false)

@@ -155,10 +155,9 @@ class PocketActivity:ComponentActivity(){
             .setNegativeButton("取消",null).show()
     }
     private fun loginQr(){
-        val box=col().apply{gravity=Gravity.CENTER;setPadding(dp(14),dp(6),dp(14),dp(6))}
-        val image=ImageView(this);box.addView(image,LinearLayout.LayoutParams(dp(220),dp(220)))
-        val message=label("正在获取二维码…");box.addView(message)
-        val dialog=AlertDialog.Builder(this).setTitle("用手机 115 扫码，并确认登录").setView(box).setNegativeButton("关闭",null).create()
+        val image=ImageView(this)
+        val message=label("正在获取二维码…")
+        val dialog=AlertDialog.Builder(this).setTitle("用手机 115 扫码，并确认登录").setNegativeButton("关闭",null).create()
           var job:Job?=null;var activeQr:LoginQr?=null
           val confirm=button("已在手机确认，完成登录"){
               val qr=activeQr
@@ -167,14 +166,15 @@ class PocketActivity:ComponentActivity(){
                   drive.finishLogin(qr);withContext(Dispatchers.IO){db.bindAccount(drive.accountId)}
                   dialog.dismiss();refresh();status.text="115 登录成功，选择曲库扫描，或从目录备份恢复"
               }catch(e:CancellationException){throw e}catch(e:Exception){message.text=safeError(e)+"；可重试或重新扫码"}}}
-          };box.addView(confirm)
+          }
+          dialog.setView(AdaptiveQrContent(this,image,message,confirm).view)
           dialog.setOnDismissListener{job?.cancel()};dialog.show()
         job=lifecycleScope.launch{try{
               val qr=drive.startLogin(db.setting("appid"));activeQr=qr
             val bitmap=withContext(Dispatchers.Default){
-                val matrix=QRCodeWriter().encode(qr.content,BarcodeFormat.QR_CODE,600,600,mapOf(EncodeHintType.MARGIN to 2))
+                val matrix=QRCodeWriter().encode(qr.content,BarcodeFormat.QR_CODE,600,600,mapOf(EncodeHintType.MARGIN to 4))
                 Bitmap.createBitmap(600,600,Bitmap.Config.RGB_565).apply{val pixels=IntArray(600*600){i->if(matrix[i%600,i/600])Color.BLACK else Color.WHITE};setPixels(pixels,0,600,0,0,600,600)}
-            };image.setImageBitmap(bitmap);message.text="等待扫码 · 二维码由 115 提供"
+            };image.setImageBitmap(bitmap);(image.drawable as? android.graphics.drawable.BitmapDrawable)?.isFilterBitmap=false;message.text="等待扫码 · 二维码由 115 提供"
             var failures=0
             repeat(110){
                 delay(1800)

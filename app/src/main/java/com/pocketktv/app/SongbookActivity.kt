@@ -204,16 +204,25 @@ class SongbookActivity:ComponentActivity(){
         lifecycleScope.launch{withContext(Dispatchers.IO){db.reparseMetadata{done,total->runOnUiThread{title="曲库整理 $done / $total"}};ArtistDirectory.prepare(db)};web.evaluateJavascript("window.dispatchEvent(new Event('artist-index-ready'))",null)}
     }
     private fun blocked()=WebResourceResponse("text/plain","UTF-8",403,"Blocked",emptyMap(),ByteArrayInputStream(ByteArray(0)))
+    @Synchronized private fun makePhonePairing():JSONObject=try{
+        val server=phoneServer?:PhoneSongbookServer(this,{name->discovery.artistPhoto(name)}){path,method,body->LocalBridge().request(path,method,body)}.apply{start(5000,false)}.also{phoneServer=it}
+        val url=server.pairingUrl
+        if(url==null)JSONObject().put("ok",false).put("message","没有获取到局域网地址。请将手机和设备连接同一 Wi-Fi 或手机热点后重试；极托中请检查局域网权限。")
+        else{
+            val matrix=com.google.zxing.qrcode.QRCodeWriter().encode(url,com.google.zxing.BarcodeFormat.QR_CODE,600,600,mapOf(com.google.zxing.EncodeHintType.MARGIN to 4))
+            val bitmap=android.graphics.Bitmap.createBitmap(600,600,android.graphics.Bitmap.Config.RGB_565)
+            val pixels=IntArray(600*600){i->if(matrix[i%600,i/600])android.graphics.Color.BLACK else android.graphics.Color.WHITE};bitmap.setPixels(pixels,0,600,0,0,600,600)
+            val output=java.io.ByteArrayOutputStream();check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,output)){"二维码生成失败"};bitmap.recycle()
+            JSONObject().put("ok",true).put("image","data:image/png;base64,"+android.util.Base64.encodeToString(output.toByteArray(),android.util.Base64.NO_WRAP))
+        }
+    }catch(e:Exception){android.util.Log.w("WoniuPhone","Pairing unavailable",e);JSONObject().put("ok",false).put("message","无法启动手机点歌，请检查网络与极托权限后重试。")}
     private fun showPhonePairing(){
-        val url=phoneServer?.pairingUrl
-        if(url==null){AlertDialog.Builder(this).setTitle("手机扫码点歌").setMessage("请将播放设备与手机连接到同一个 Wi-Fi，再打开扫码点歌。").setPositiveButton("知道了",null).show();return}
-        val matrix=com.google.zxing.qrcode.QRCodeWriter().encode(url,com.google.zxing.BarcodeFormat.QR_CODE,420,420)
-        val bitmap=android.graphics.Bitmap.createBitmap(420,420,android.graphics.Bitmap.Config.ARGB_8888)
-        for(y in 0 until 420)for(x in 0 until 420)bitmap.setPixel(x,y,if(matrix[x,y])android.graphics.Color.BLACK else android.graphics.Color.WHITE)
-        val panel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(32,20,32,24)}
-        panel.addView(ImageView(this).apply{setImageBitmap(bitmap)},LinearLayout.LayoutParams(-1,420))
-        panel.addView(TextView(this).apply{text="微信扫一扫，即可在手机上选歌\n手机与播放设备需要连接同一个 Wi-Fi\n关闭 App 后二维码失效";textSize=19f;gravity=Gravity.CENTER;setPadding(0,20,0,10)})
-        AlertDialog.Builder(this).setTitle("窝牛 · 手机点歌").setView(panel).setPositiveButton("关闭",null).show()
+        val result=makePhonePairing()
+        if(!result.optBoolean("ok")){AlertDialog.Builder(this).setTitle("手机点歌暂不可用").setMessage(result.optString("message")).setPositiveButton("关闭",null).show();return}
+        val encoded=result.getString("image").substringAfter(',');val data=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
+        val image=ImageView(this).apply{setImageBitmap(android.graphics.BitmapFactory.decodeByteArray(data,0,data.size));(drawable as? android.graphics.drawable.BitmapDrawable)?.isFilterBitmap=false}
+        val text=TextView(this).apply{text="用手机扫码点歌\n手机与播放设备需连接同一 Wi-Fi";textSize=15f;gravity=Gravity.CENTER;setPadding(12,12,12,12)}
+        AlertDialog.Builder(this).setTitle("窝牛 · 手机点歌").setView(AdaptiveQrContent(this,image,text).view).setPositiveButton("关闭",null).show()
     }
     private fun openManagement(){startActivity(Intent(this,PocketActivity::class.java))}
     private fun hideVideo(){menuHideJob?.cancel();videoPanel.visibility=View.GONE;setPlaybackImmersive(false);web.requestFocus();web.evaluateJavascript("window.dispatchEvent(new Event('woniu-change'))",null)}
@@ -306,7 +315,7 @@ class SongbookActivity:ComponentActivity(){
             return super.dispatchKeyEvent(event)
         }
         if(::web.isInitialized&&event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_BUTTON_A)){
-            if(event.action==KeyEvent.ACTION_UP)web.evaluateJavascript("(function(){var e=document.activeElement;if(e&&e.matches('button,a[href]'))e.click();else if(e&&e.tagName==='INPUT')e.focus();})()",null)
+            if(event.action==KeyEvent.ACTION_UP)web.evaluateJavascript("(function(){var e=document.activeElement;if(e&&e.matches('button,a[href],[role=button][tabindex]'))e.click();else if(e&&e.tagName==='INPUT')e.focus();})()",null)
             return true
         }
         if(event.keyCode==KeyEvent.KEYCODE_BUTTON_B){if(event.action==KeyEvent.ACTION_UP)onBackPressedDispatcher.onBackPressed();return true}
@@ -329,9 +338,9 @@ class SongbookActivity:ComponentActivity(){
         @JavascriptInterface fun queue():String=snapshot().toString()
 
         @JavascriptInterface fun state():String=JSONObject().put("title",activeSong?.title.orEmpty()).put("artist",activeSong?.artist.orEmpty())
-            .put("position",positionMs).put("duration",durationMs).put("state",playState).put("error",playError)
+            .put("position",positionMs).put("duration",durationMs).put("seekable",engine.seekable).put("fraction",engine.playbackFraction).put("state",playState).put("error",playError)
             .put("vocalMode",vocalMode).put("volume",systemVolumePercent()).put("fullscreen",videoFullscreen).put("tracks",JSONArray(audioLabels)).put("channels",audioChannels).put("channelControl",engine.supportsChannelSelection).put("channelMode",engine.selectedChannelMode).put("edition",activeSong?.edition.orEmpty()).put("counterpart",counterpart?.edition.orEmpty()).toString()
-        @JavascriptInterface fun seek(value:Int){runOnUiThread{learningProgress.discontinuity();engine.seekTo(durationMs*value.coerceIn(0,1000)/1000);armMenuHide()}}
+        @JavascriptInterface fun seek(value:Int){runOnUiThread{learningProgress.discontinuity();if(durationMs>0)engine.seekTo(durationMs*value.coerceIn(0,1000)/1000)else engine.seekFraction(value.coerceIn(0,1000)/1000f);armMenuHide()}}
         @JavascriptInterface fun action(action:String){runOnUiThread{
             when(action){
                 "toggle_menu"->{if(menuShown)hideControls()else showControls();return@runOnUiThread}
@@ -371,6 +380,7 @@ class SongbookActivity:ComponentActivity(){
         @JavascriptInterface fun songbookVisible():Boolean=::videoPanel.isInitialized&&videoPanel.visibility!=View.VISIBLE
         @JavascriptInterface fun setTheme(value:String){if(value in listOf("dark","light"))db.setting("ui_theme",value,true)}
         @JavascriptInterface fun openPhone(){runOnUiThread{showPhonePairing()}}
+        @JavascriptInterface fun phonePairing():String=makePhonePairing().toString()
         @JavascriptInterface fun openManagement(){runOnUiThread{this@SongbookActivity.openManagement()}}
         @JavascriptInterface fun request(path:String,method:String,body:String):String=try{
             require(path.length<8192&&body.length<65536)

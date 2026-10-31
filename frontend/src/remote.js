@@ -17,7 +17,7 @@ window.addEventListener('keydown',event=>{
   const rect=current.getBoundingClientRect(),cx=rect.left+rect.width/2,cy=rect.top+rect.height/2
   let best=null,score=Infinity,bestAligned=false
   for(const item of candidates){
-    if(item===current)continue
+    if(item===current||(current.matches('.songrow')&&current.contains(item)))continue
     const r=item.getBoundingClientRect(),dx=r.left+r.width/2-cx,dy=r.top+r.height/2-cy
     const horizontal=['ArrowLeft','ArrowRight'].includes(event.key)
     const primary=horizontal?dx:dy

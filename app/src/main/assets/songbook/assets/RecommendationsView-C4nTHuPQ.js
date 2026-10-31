@@ -1,0 +1,1 @@
+import{P as e}from"./PersonalRecommendations-nHGCqPmQ.js";import{_ as o,c as t,a,o as s}from"./index-07GJofzJ.js";import"./PagedCarousel-KsIS18O-.js";import"./refresh-cw-O5vZWQXF.js";const c={class:"recommendations-page"},n={__name:"RecommendationsView",setup(m){return(r,_)=>(s(),t("div",c,[a(e,{full:""})]))}},f=o(n,[["__scopeId","data-v-8e2d1ded"]]);export{f as default};

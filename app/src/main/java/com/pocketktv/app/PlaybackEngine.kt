@@ -21,16 +21,22 @@ import java.util.concurrent.TimeUnit
 
 /** Unified LibVLC engine: the same demux/decoder path for every cloud-library format. */
 class PlaybackEngine(context:Context,private val onProgress:(Long)->Unit,private val onFinished:()->Unit,private val onError:(String)->Unit){
+ private companion object {
+  // DS: output gap ~300ms at 200ms caching, versus ~1.6s at 1500ms.
+  // Keep one input; competing 115 streams can fail during track preloading.
+  const val NETWORK_CACHE_MS=200
+ }
  private val appContext=context.applicationContext
  private val main=Handler(Looper.getMainLooper())
  private var channelMode="stereo"
  private var softwareVolume=100
  fun setPlaybackVolume(value:Int){softwareVolume=value.coerceIn(0,100);player.setVolume(softwareVolume)}
  val playbackVolume get()=softwareVolume
- private fun createCore()=LibVLC(appContext,arrayListOf("--quiet","--no-video-title-show","--network-caching=1500","--no-audio-time-stretch","--stereo-mode="+when(channelMode){"left"->3;"right"->4;else->1}))
+ private fun createCore()=LibVLC(appContext,arrayListOf("--quiet","--no-video-title-show","--network-caching=$NETWORK_CACHE_MS","--no-audio-time-stretch","--stereo-mode="+when(channelMode){"left"->3;"right"->4;else->1}))
  private var core=createCore()
  private var player=MediaPlayer(core)
  private var savedUrl="";private var savedHeaders=emptyMap<String,String>()
+
  private var resumePosition=0L;private var pauseAfterStart=false
  private val transport=PlaybackTransport()
  private var layout:VLCVideoLayout?=null
@@ -56,8 +62,16 @@ class PlaybackEngine(context:Context,private val onProgress:(Long)->Unit,private
  val supportsChannelSelection=true
  val selectedChannelMode get()=channelMode
  val isPlaying get()=active&&player.isPlaying
+ val seekable get()=active&&player.isSeekable
+ val playbackFraction get()=if(seekable)player.position.coerceIn(0f,1f) else 0f
+ fun seekFraction(fraction:Float){if(active&&player.isSeekable)player.setPosition(fraction.coerceIn(0f,1f),false)}
  val durationMs get()=if(!active)0L else correctedDuration?:if(mpegTimeline)0L else player.length.coerceAtLeast(0L)
- val currentPositionMs get()=if(active)player.time.coerceAtLeast(0L) else 0L
+ val currentPositionMs:Long get(){
+  if(!active)return 0L
+  val duration=correctedDuration;val fraction=player.position
+  // DVD MPEG timestamps can retain an hour-long offset after seeking.
+  return if(mpegTimeline&&duration!=null&&fraction in 0f..1f)(fraction*duration).toLong() else player.time.coerceAtLeast(0L)
+ }
  val audioChannelCount:Int get(){if(!active||(diagnosticStats()?.playedAbuffers?:0)==0)return 0;val media=player.media?:return 0;return try{(0 until media.trackCount).mapNotNull{media.getTrack(it) as? org.videolan.libvlc.interfaces.IMedia.AudioTrack}.firstOrNull()?.channels?:0}finally{media.release()}}
  init{bindEvents()}
  private fun bindEvents(){player.setEventListener{event->if(active&&!released)when(event.type){
@@ -78,7 +92,7 @@ class PlaybackEngine(context:Context,private val onProgress:(Long)->Unit,private
   val local=transport.open(url,headers)
   if(mpegTimeline&&correctedDuration==null){probeJob=probeScope.launch{val duration=try{MpegTimeline.probe(probeClient,url,headers){durationProbeInfo+=" $it"}}catch(e:CancellationException){throw e}catch(e:Exception){durationProbeInfo+=" error="+e.javaClass.simpleName;null};withContext(Dispatchers.Main){if(active&&fileId==id){if(duration!=null){correctedDuration=duration;durationCache.put(id,duration)}else if(player.length in 1..1_800_000)correctedDuration=player.length;applyPendingSeek()}}}}
   val media=Media(core,Uri.parse(local));media.setHWDecoderEnabled(true,false)
-  media.addOption(":network-caching=1500");media.addOption(":no-video-title-show")
+  media.addOption(":network-caching=$NETWORK_CACHE_MS");media.addOption(":no-video-title-show")
   player.media=media;media.release();setResizeMode(scaleMode);player.play();main.post(ticker)
  }
  fun pause(){if(active)player.pause()}
@@ -93,7 +107,7 @@ class PlaybackEngine(context:Context,private val onProgress:(Long)->Unit,private
  fun audioTracks():List<String> = player.audioTracks.orEmpty().filter{it.id>=0}.mapIndexed{i,t->t.name?.takeIf{it.isNotBlank()}?:"音轨 ${i+1}"}
  private fun refreshTracks(){val labels=audioTracks();if(labels!=lastTracks){lastTracks=labels;onAudioTracksChanged?.invoke(labels);applyTrack()}}
  fun setVocalMode(mode:String,accompanimentIndex:Int?,audioTrackCount:Int){this.mode=mode;trackIndex=if(mode=="accompaniment")accompanimentIndex?:1 else 0;applyTrack()}
- private fun applyTrack(){val tracks=player.audioTracks.orEmpty().filter{it.id>=0};tracks.getOrNull(trackIndex)?.let{if(player.audioTrack!=it.id)player.setAudioTrack(it.id)}}
+ private fun applyTrack(){val tracks=player.audioTracks.orEmpty().filter{it.id>=0};tracks.getOrNull(trackIndex)?.let{if(player.audioTrack!=it.id){Log.i("PlaybackEngine","Audio switch track=$trackIndex uptimeMs=${android.os.SystemClock.elapsedRealtime()}");player.setAudioTrack(it.id)}}}
  fun setChannelMode(mode:String){
   if(mode !in listOf("stereo","left","right")||mode==channelMode)return
   val hint=if(mpegTimeline)"mpg" else "";val id=fileId;val url=savedUrl;val headers=savedHeaders;val position=currentPositionMs;val playing=isPlaying;val wasActive=active

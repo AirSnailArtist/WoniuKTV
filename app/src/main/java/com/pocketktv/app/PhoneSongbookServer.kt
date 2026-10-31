@@ -9,8 +9,13 @@ import java.util.UUID
 /** Local-network pairing page: no account cookies or media URLs are exposed. */
 class PhoneSongbookServer(private val context:Context,private val photo:(String)->ByteArray?={null},private val bridge:(String,String,String)->String):NanoHTTPD("0.0.0.0",0){
  private val pairing=UUID.randomUUID().toString().replace("-","")
- val pairingUrl:String? get(){val interfaces=NetworkInterface.getNetworkInterfaces().toList().sortedBy{if(it.name.startsWith("wlan"))0 else 1}
-  val address=interfaces.flatMap{it.inetAddresses.toList()}.filterIsInstance<Inet4Address>().firstOrNull{!it.isLoopbackAddress&&it.isSiteLocalAddress}?.hostAddress?:return null
+ val pairingUrl:String? get(){
+  // Prefer the active network over inactive VPN or virtual interfaces.
+  val active=runCatching{val cm=context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+   cm.getLinkProperties(cm.activeNetwork)?.linkAddresses?.map{it.address}.orEmpty()}.getOrDefault(emptyList())
+  val interfaces=runCatching{NetworkInterface.getNetworkInterfaces()?.toList().orEmpty()}.getOrDefault(emptyList()).filter{runCatching{it.isUp&&!it.isLoopback}.getOrDefault(false)}.sortedBy{if(it.name.startsWith("wlan"))0 else 1}
+  val addresses=active+interfaces.flatMap{runCatching{it.inetAddresses.toList()}.getOrDefault(emptyList())}
+  val address=addresses.filterIsInstance<Inet4Address>().firstOrNull{!it.isLoopbackAddress&&it.isSiteLocalAddress}?.hostAddress?:return null
   return "http://$address:$listeningPort/?token=$pairing"
  }
  override fun serve(session:IHTTPSession):Response {
