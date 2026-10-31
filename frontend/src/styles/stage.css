@@ -41,3 +41,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,.remote-focus button:fo
 .bili-browse .now-playing{min-height:36px;padding:6px 10px;gap:7px;border-radius:8px}
 .bili-browse .now-playing .record,.bili-browse .now-playing small,.bili-browse .now-playing em{display:none}
 .bili-browse .now-playing b{font-size:13px;margin:0}
+
+.home-topline{font-size:15px;line-height:1.35;font-weight:500;color:var(--gold);white-space:nowrap;margin:0;flex:none}.home-header .search-entry{min-width:150px;max-width:200px;flex:1}.home-header{gap:10px}.home-header .search-entry kbd{display:none}

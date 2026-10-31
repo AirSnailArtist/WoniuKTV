@@ -6,8 +6,8 @@ android {
         applicationId = "com.pocketktv.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "0.9.7"
+        versionCode = 31
+        versionName = "0.9.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
     }

@@ -1,6 +1,6 @@
 <template>
   <div class="ktv-shell" :class="{'bili-browse':$route.name==='bilibili'}">
-    <header class="app-header"><router-link class="brand" :to="{name:'home'}"><span class="brand-icon"><img :src="brandLogo" alt=""/></span><span><b>窝牛</b><small>PRIVATE KTV</small></span></router-link><span class="library-status"><i/>{{libraryCount?libraryCount.toLocaleString()+' 首私人曲库':'你的家庭点歌台'}}</span><button class="search-entry" @click="$router.push({name:'search'})"><Search :size="20"/>搜索歌名、歌手 <kbd>拼音</kbd></button><button class="header-tool" @click="openFit">画面适配</button><button class="header-tool phone-entry" @click="phone"><QrCode :size="22"/>手机点歌</button><button class="header-tool theme-entry" @click="toggleTheme"><Sun v-if="theme==='dark'" :size="21"/><Moon v-else :size="21"/>{{theme==='dark'?'日间':'夜间'}}</button><button class="header-tool settings-entry" aria-label="曲库与账号设置" @click="manage"><Settings2 :size="22"/></button></header>
+    <header class="app-header" :class="{'home-header':$route.name==='home'}"><router-link class="brand" :to="{name:'home'}"><span class="brand-icon"><img :src="brandLogo" alt=""/></span><span><b>窝牛</b><small>PRIVATE KTV</small></span></router-link><h1 v-if="$route.name==='home'" class="home-topline">今晚，唱你喜欢的。</h1><span v-else class="library-status"><i/>{{libraryCount?libraryCount.toLocaleString()+' 首私人曲库':'你的家庭点歌台'}}</span><button class="search-entry" @click="$router.push({name:'search'})"><Search :size="20"/>搜索歌名、歌手 <kbd>拼音</kbd></button><button class="header-tool" @click="openFit">画面适配</button><button class="header-tool phone-entry" @click="phone"><QrCode :size="22"/>手机点歌</button><button class="header-tool theme-entry" @click="toggleTheme"><Sun v-if="theme==='dark'" :size="21"/><Moon v-else :size="21"/>{{theme==='dark'?'日间':'夜间'}}</button><button class="header-tool settings-entry" aria-label="曲库与账号设置" @click="manage"><Settings :size="22"/></button></header>
     <nav class="primary-nav"><router-link v-for="item in navigation" :key="item.label" :to="item.to" :class="{selected:item.active($route)}"><component :is="item.icon" :size="18" :stroke-width="1.7"/>{{item.label}}<span v-if="item.queue&&player.queueCount" class="count">{{player.queueCount}}</span></router-link></nav>
     <main class="workspace-content"><router-view/></main>
     <footer class="control-deck">
@@ -16,7 +16,7 @@
 import {onMounted,onUnmounted,ref,nextTick} from 'vue'
 import brandLogo from './assets/woniu-logo-v1.png'
 import {preference,setViewportPreference} from './viewportFit'
-import {House,Music2,Mic2,Heart,ListMusic,Settings2,Search,QrCode,Sun,Moon,Play,Pause,Disc3,RotateCcw,SkipForward,Volume1,Volume2,Maximize2,Globe2,Library} from 'lucide-vue-next'
+import {House,Music2,Mic2,Heart,ListMusic,Settings,Search,QrCode,Sun,Moon,Play,Pause,Disc3,RotateCcw,SkipForward,Volume1,Volume2,Maximize2,Globe2,Library} from 'lucide-vue-next'
 import {usePlayerStore} from './stores/player';import {useUserStore} from './stores/user';import {useFavoritesStore} from './stores/favorites'
 import ToastHost from './components/ToastHost.vue';import DialogHost from './components/DialogHost.vue';import api from './api/client';import {useToast} from './composables/useToast'
 import {useRouter} from 'vue-router'

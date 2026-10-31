@@ -1,1 +1,0 @@
-import{C as e}from"./ChartRecommendations-evi-x8LJ.js";import{_ as a,c as o,a as t,o as s}from"./index-HyFMs9da.js";import"./PagedCarousel-uJHUSMEd.js";import"./refresh-cw-CQO-PnjV.js";const n={class:"ranking-page"},r={__name:"RankingView",setup(c){return(_,i)=>(s(),o("div",n,[t(e,{full:""})]))}},f=a(r,[["__scopeId","data-v-001b2481"]]);export{f as default};

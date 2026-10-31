@@ -77,6 +77,7 @@ class PocketActivity:ComponentActivity(){
     private fun buildUi(){
         val root=col().apply{setBackgroundColor(bg);setPadding(dp(16),dp(10),dp(16),dp(10))};setContentView(root)
         val header=row()
+        header.addView(button("‹ 返回点歌"){finish()}.apply{contentDescription="返回点歌"})
         header.addView(col().apply{
             addView(label("窝牛家庭KTV",26f,gold).apply{setTypeface(typeface,Typeface.BOLD)})
             addView(label("把喜欢的歌，留在家里唱",11f,muted))
