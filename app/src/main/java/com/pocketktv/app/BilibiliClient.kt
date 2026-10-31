@@ -1,5 +1,6 @@
 package com.pocketktv.app
 
+import okhttp3.FormBody
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -16,13 +17,16 @@ data class BiliVideo(val bvid:String,val cid:Long,val aid:Long,val title:String,
     fun json()=JSONObject().put("bvid",bvid).put("cid",cid).put("title",title).put("owner",owner).put("duration",duration)
 }
 
-/** Read-only web integration. No shared APP keys, credential service, or access-control bypass.
+/** Web integration with explicitly requested KTV favorites. No shared APP keys, credential service, or access-control bypass.
  * WBI permutation/reference: MIT aaa1115910/bv, pinned in UPSTREAM.md.
  * Search/folders: 20/page, <=2 concurrent requests, 15s/request, <=2MiB/response; no automatic retries.
  */
+private class BiliApiRejection(message:String):IllegalStateException(message)
+
 class BilibiliClient(private val load:()->String?,private val save:(String?)->Unit,
     private val client:OkHttpClient=OkHttpClient.Builder().connectTimeout(6,TimeUnit.SECONDS).readTimeout(10,TimeUnit.SECONDS)
         .callTimeout(15,TimeUnit.SECONDS).retryOnConnectionFailure(false).followRedirects(false).build(),
+    private val readState:(String)->String={""},private val writeState:(String,String)->Unit={_,_->},
     private val apiBase:String="https://api.bilibili.com",private val passportBase:String="https://passport.bilibili.com") {
     companion object {
         const val UA="Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -47,11 +51,11 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
     private var lastPoll=0L
     @Volatile private var wbiKeys=""
     @Volatile private var keysUntil=0L
-    private fun request(path:String,params:Map<String,String> = emptyMap(),passport:Boolean=false,allowGuest:Boolean=false,cookies:((List<Cookie>)->Unit)?=null):JSONObject {
+    private fun request(path:String,params:Map<String,String> = emptyMap(),passport:Boolean=false,allowGuest:Boolean=false,cookies:((List<Cookie>)->Unit)?=null,form:Map<String,String>?=null):JSONObject {
         check(permits.tryAcquire(1,TimeUnit.SECONDS)){"B站请求较多，请稍后重试"}
         try {
             val url=(if(passport)passportBase else apiBase).toHttpUrl().newBuilder().addPathSegments(path.trimStart('/')).apply{params.forEach{(k,v)->addQueryParameter(k,v)}}.build()
-            val req=Request.Builder().url(url).header("User-Agent",UA).header("Referer","https://www.bilibili.com/").apply{if(cookie.isNotEmpty())header("Cookie",cookie)}.build()
+            val req=Request.Builder().url(url).header("User-Agent",UA).header("Referer","https://www.bilibili.com/").apply{if(cookie.isNotEmpty())header("Cookie",cookie);if(form!=null)post(FormBody.Builder().apply{form.forEach{(k,v)->add(k,v)}}.build())}.build()
             return client.newCall(req).execute().use{r->
                 check(r.isSuccessful){if(r.code in listOf(403,412,429))"B站暂时限制了请求，请登录或稍后重试" else "B站请求失败（HTTP ${r.code}）"}
                 cookies?.invoke(Cookie.parseAll(r.request.url,r.headers))
@@ -59,7 +63,7 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
                 val text=body.byteStream().use{input->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(true){val n=input.read(buffer);if(n<0)break;check(out.size()+n<=2*1024*1024){"B站响应过大"};out.write(buffer,0,n)};out.toString("UTF-8")}
                 val json=runCatching{JSONObject(text)}.getOrElse{error("B站返回非预期数据，请稍后重试")}
                 val code=json.optInt("code",-1)
-                check(code==0||(allowGuest&&code == -101)){when(code){-101->"请先登录B站";-352,-412->"B站要求验证，请登录后重试";-403->"当前账号没有观看权限";-404->"视频不存在或已下架";else->"B站请求未成功（$code）"}}
+                if(!(code==0||(allowGuest&&code == -101)))throw BiliApiRejection(when(code){-101->"请先登录B站";-352,-412->"B站要求验证，请登录后重试";-403->"当前账号没有观看权限";-404->"视频不存在或已下架";else->"B站请求未成功（$code）"})
                 json.optJSONObject("data")?:JSONObject()
             }
         }finally{permits.release()}
@@ -109,7 +113,7 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
         require(folder.matches(Regex("[0-9]{1,20}"))&&page in 1..1000){"收藏夹编号无效"}
         val d=request("x/v3/fav/resource/list",mapOf("media_id" to folder,"pn" to "$page","ps" to "20","platform" to "web"))
         val rows=d.optJSONArray("medias")?:JSONArray();check(rows.length()<=20){"B站收藏内容分页格式已改变"}
-        return JSONObject().put("items",JSONArray().apply{for(i in 0 until rows.length()){val row=rows.getJSONObject(i);val bv=row.optString("bvid");put(JSONObject().put("bvid",bv).put("title",cleanTitle(row.optString("title"))).put("owner",row.optJSONObject("upper")?.optString("name").orEmpty().take(100)).put("duration",row.optLong("duration")).put("available",validBvid(bv)&&row.optString("title")!="已失效视频"))}}).put("hasMore",d.optBoolean("has_more")).put("page",page)
+        return JSONObject().put("items",JSONArray().apply{for(i in 0 until rows.length()){val row=rows.getJSONObject(i);val bv=row.optString("bvid");put(JSONObject().put("aid",row.optLong("id").toString()).put("bvid",bv).put("title",cleanTitle(row.optString("title"))).put("owner",row.optJSONObject("upper")?.optString("name").orEmpty().take(100)).put("duration",row.optLong("duration")).put("available",validBvid(bv)&&row.optString("title")!="已失效视频"))}}).put("hasMore",d.optBoolean("has_more")).put("page",page).put("canManage",cookieValue("DedeUserID").isNotEmpty()&&d.optJSONObject("info")?.optLong("mid")?.toString()==cookieValue("DedeUserID"))
     }
     fun video(bvid:String):BiliVideo {
         require(validBvid(bvid)){"视频BV号无效"}
@@ -117,6 +121,51 @@ class BilibiliClient(private val load:()->String?,private val save:(String?)->Un
         val cid=d.getLong("cid");require(cid in 1..999_999_999_999_999L)
         return BiliVideo(bvid,cid,d.getLong("aid"),cleanTitle(d.getString("title")),d.getJSONObject("owner").getString("name").take(100),d.optLong("duration"))
     }
+    /** One explicit order -> one set-style add; never removes from any other folder.
+     * At most 10 folder pages (200 folders), 30s discovery budget, no write retries.
+     * An uncertain create is recorded before submission and reconciled by name on the next order.
+     */
+    @Synchronized fun favoriteForKtv(bvid:String):JSONObject {
+        val uid=cookieValue("DedeUserID");val csrf=cookieValue("bili_jct")
+        check(uid.matches(Regex("[0-9]{1,20}"))&&csrf.isNotBlank()){"请重新登录B站后自动收藏"}
+        val video=video(bvid);check(video.aid>0){"视频编号无效"};val key="bili_ktv_folder:"+uid
+        var folder=readState(key).toLongOrNull()?.takeIf{it>0}?:0L
+        if(folder>0){
+            val info=request("x/v3/fav/folder/info",mapOf("media_id" to "$folder"))
+            check(info.optString("title")=="窝牛KTV"&&info.optLong("mid")==uid.toLong()){"窝牛KTV收藏夹已变更，请在B站恢复名称后重试"}
+        }else{
+            val deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(30);var complete=false
+            for(page in 1..10){
+                check(System.nanoTime()<deadline){"收藏夹查找超时，稍后点歌时再试"}
+                val data=request("x/v3/fav/folder/created/list",mapOf("up_mid" to uid,"pn" to "$page","ps" to "20"))
+                val rows=data.optJSONArray("list")?:JSONArray();check(rows.length()<=20){"收藏夹分页格式已改变"}
+                for(i in 0 until rows.length()){val row=rows.getJSONObject(i);if(row.optString("title")=="窝牛KTV"){folder=row.getLong("id");break}}
+                if(folder>0)break
+                if(!data.optBoolean("has_more")){complete=true;break}
+            }
+            if(folder==0L){
+                check(complete){"收藏夹超过200个，请在B站手动创建窝牛KTV收藏夹并移到前面"}
+                check(readState(key+":creating")!="unknown"){"上次创建收藏夹结果待确认，请在B站确认窝牛KTV收藏夹后再次点歌"}
+                writeState(key+":creating","unknown")
+                val created=try{request("x/v3/fav/folder/add",form=mapOf("title" to "窝牛KTV","intro" to "在窝牛KTV点过的B站歌曲","privacy" to "1","csrf" to csrf))}catch(e:BiliApiRejection){writeState(key+":creating","");throw e}
+                folder=created.getLong("id");check(folder>0)
+            }
+            writeState(key,"$folder");writeState(key+":creating","")
+        }
+        request("x/v3/fav/resource/deal",form=mapOf("rid" to "${video.aid}","type" to "2","add_media_ids" to "$folder","csrf" to csrf))
+        return JSONObject().put("saved",true).put("folderId","$folder").put("folderTitle","窝牛KTV")
+    }
+    /** Removes only this video's membership in the selected, freshly verified own folder. */
+    @Synchronized fun removeFavorite(folder:String,aid:String):JSONObject {
+        require(folder.matches(Regex("[0-9]{1,20}"))&&aid.toLongOrNull()?.let{it>0}==true){"收藏标识无效"}
+        val uid=cookieValue("DedeUserID");val csrf=cookieValue("bili_jct")
+        check(uid.isNotEmpty()&&csrf.isNotEmpty()){"请先登录B站"}
+        val info=request("x/v3/fav/folder/info",mapOf("media_id" to folder))
+        check(info.optLong("mid").toString()==uid){"只能取消自己收藏夹中的收藏"}
+        request("x/v3/fav/resource/deal",form=mapOf("rid" to aid,"type" to "2","del_media_ids" to folder,"csrf" to csrf))
+        return JSONObject().put("removed",true)
+    }
+    private fun cookieValue(name:String)=cookie.split(';').map{it.trim()}.firstOrNull{it.startsWith("$name=")}?.substringAfter('=').orEmpty()
     fun source(bvid:String,cid:Long):PlaySource {
         require(validBvid(bvid)&&cid>0){"视频标识无效"}
         val d=request("x/player/playurl",mapOf("bvid" to bvid,"cid" to cid.toString(),"qn" to "64","fnval" to "1","fnver" to "0","fourk" to "0","platform" to "html5"))

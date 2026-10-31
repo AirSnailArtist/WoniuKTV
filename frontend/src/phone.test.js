@@ -12,6 +12,8 @@ async function setup(){
   let data={}
   if(path.startsWith('/api/phone-state'))data={list:[],queuedIds:['2'],player:{state:'paused'},hasMore:false}
   else if(path.startsWith('/api/recommendations'))data={items:[{song:{id:'2',title:'已选歌曲',artist:'歌手'},origin:'replay',reason:'以前点过'}],learning:true}
+  else if(path.startsWith('/api/bilibili/search'))data={items:[{bvid:'BV1GJ411x7h7',title:'手机MV',owner:'音乐',available:true}],hasMore:true}
+  else if(path.startsWith('/api/bilibili/order'))data={ordered:true,songId:'8000000000000000042'}
   else if(path.startsWith('/api/phone-songs')){const after=new URL('http://localhost'+path).searchParams.get('after');const base=after?20:0;data={items:Array.from({length:20},(_,i)=>({id:String(base+i+1),title:'歌曲'+(base+i+1),artist:'歌手'})),hasMore:!after,after:String(base+20)}}
   return {json:async()=>({ok:true,data})}
  }
@@ -26,4 +28,11 @@ describe('phone vertical songbook',()=>{
  it('appends a cursor page vertically without replacing earlier rows',async()=>{
   const {document,calls}=await setup();document.getElementById('library').click();await flush();expect(document.querySelectorAll('.song')).toHaveLength(20);document.querySelector('.load-more').click();await flush();expect(document.querySelectorAll('.song')).toHaveLength(40);expect(document.querySelector('.song b').textContent).toBe('歌曲1');expect(calls.some(p=>p.includes('after=20'))).toBe(true);expect(document.querySelector('.load-more')).toBe(null)
  })
+})
+
+it('searches Bilibili only on submit and orders the whole video card without sending credentials',async()=>{
+ const {document,calls}=await setup();document.getElementById('bilibili').click();await flush();expect(calls.some(x=>x.includes('bilibili/search'))).toBe(false)
+ const input=document.getElementById('keyword');input.value='周杰伦 MV';input.dispatchEvent(new dom.window.Event('input'));await flush();expect(calls.some(x=>x.includes('bilibili/search'))).toBe(false)
+ document.getElementById('search').click();await flush();expect(calls.some(x=>x.includes('bilibili/search?'))).toBe(true);expect(document.querySelector('.song b').textContent).toBe('手机MV')
+ document.querySelector('.song').click();await flush();expect(calls.filter(x=>x==='/api/bilibili/order')).toHaveLength(1);expect(document.querySelector('.swiper')).toBeNull()
 })

@@ -29,9 +29,13 @@ import java.io.ByteArrayInputStream
 
 /** Bundled MIT Home KTV UI; only local assets can access the database bridge. */
 class SongbookActivity:ComponentActivity(){
+    @Volatile private var chartPickerOpen=false
     private lateinit var web:WebView
     private lateinit var db:LibraryDb
     private lateinit var bili:BilibiliClient
+    @Volatile private var collectionStatus="idle"
+    private val collectSlots=java.util.concurrent.Semaphore(8)
+    private val collectLock=kotlinx.coroutines.sync.Mutex()
     private val biliJobs=java.util.concurrent.atomic.AtomicInteger(0)
     private lateinit var learning:SmartLibrary
     private var learningToken:String?=null
@@ -85,6 +89,17 @@ class SongbookActivity:ComponentActivity(){
     private lateinit var discovery:PublicCharts
     private var discoveryJob:Job?=null
     private var lastDiscoveryAttempt=0L
+    private fun collectBilibili(song:Song):Boolean{
+        if(song.metadataProvider!="bilibili")return false
+        if(!collectSlots.tryAcquire()){runOnUiThread{Toast.makeText(this,"已点歌，自动收藏任务较多，请稍后再点以收藏",Toast.LENGTH_LONG).show()};return false}
+        lifecycleScope.launch(Dispatchers.IO){
+            try{collectLock.lock();try{collectionStatus="saving";bili.favoriteForKtv(song.pickCode);collectionStatus="saved"}finally{collectLock.unlock()}
+                withContext(Dispatchers.Main){Toast.makeText(this@SongbookActivity,"已收藏到B站 · 窝牛KTV",Toast.LENGTH_SHORT).show()}
+            }catch(e:CancellationException){throw e}catch(e:Exception){collectionStatus="failed";withContext(Dispatchers.Main){Toast.makeText(this@SongbookActivity,"已点歌，B站收藏未完成："+(if(e is java.io.IOException)"网络异常，请稍后再点以收藏" else e.message.orEmpty().take(100)),Toast.LENGTH_LONG).show()}}
+            finally{collectSlots.release()}
+        }
+        return true
+    }
     private fun refreshDiscovery(force:Boolean=false){runOnUiThread{if(discoveryJob?.isActive==true||(!force&&System.currentTimeMillis()-lastDiscoveryAttempt<60_000))return@runOnUiThread;lastDiscoveryAttempt=System.currentTimeMillis();discoveryJob=lifecycleScope.launch{discovery.refresh(force);if(!isDestroyed)web.evaluateJavascript("window.dispatchEvent(new Event('discovery-updated'))",null)}}}
     private var phoneServer:PhoneSongbookServer?=null
     @Volatile private var activeQueueId=0L
@@ -97,7 +112,7 @@ class SongbookActivity:ComponentActivity(){
         super.onCreate(state);volumeControlStream=android.media.AudioManager.STREAM_MUSIC;db=LibraryDb(this);if(db.setting("stretch_default_v1")!="true"){db.setting("video_resize",AspectRatioFrameLayout.RESIZE_MODE_FILL.toString(),true);db.setting("video_fullscreen","true",true);db.setting("stretch_default_v1","true",true)};window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         learning=SmartLibrary(db);discovery=PublicCharts(this,db)
         val biliStore=SecretStore(this,"bilibili")
-        bili=BilibiliClient({biliStore.load()},{value->if(value==null)biliStore.clear() else biliStore.save(value)})
+        bili=BilibiliClient({biliStore.load()},{value->if(value==null)biliStore.clear() else biliStore.save(value)},readState={key->db.setting(key)},writeState={key,value->db.setting(key,value,true)})
         val root=FrameLayout(this).apply{setBackgroundColor(Color.BLACK)}
         rootFrame=root;videoFullscreen=db.setting("video_fullscreen","true")=="true"
         val bar=LinearLayout(this)
@@ -335,6 +350,10 @@ class SongbookActivity:ComponentActivity(){
             }
             return super.dispatchKeyEvent(event)
         }
+        if(::web.isInitialized&&chartPickerOpen&&event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT)){
+            if(event.action==KeyEvent.ACTION_DOWN){val key=when(event.keyCode){KeyEvent.KEYCODE_DPAD_UP->"ArrowUp";KeyEvent.KEYCODE_DPAD_DOWN->"ArrowDown";KeyEvent.KEYCODE_DPAD_LEFT->"ArrowLeft";else->"ArrowRight"};web.evaluateJavascript("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'$key',bubbles:true,cancelable:true}))",null)}
+            return true
+        }
         if(::web.isInitialized&&event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_BUTTON_A)){
             if(event.action==KeyEvent.ACTION_UP)web.evaluateJavascript("(function(){var e=document.activeElement;if(e&&e.matches('button,a[href],[role=button][tabindex]'))e.click();else if(e&&e.tagName==='INPUT')e.focus();})()",null)
             return true
@@ -342,7 +361,7 @@ class SongbookActivity:ComponentActivity(){
         if(event.keyCode==KeyEvent.KEYCODE_BUTTON_B){if(event.action==KeyEvent.ACTION_UP)onBackPressedDispatcher.onBackPressed();return true}
         return super.dispatchKeyEvent(event)
     }
-    override fun onResume(){super.onResume();if(::web.isInitialized&&web.progress==100)web.reload()}
+    override fun onResume(){super.onResume();chartPickerOpen=false;if(::web.isInitialized&&web.progress==100)web.reload()}
     override fun onStop(){learningToken?.let{token->learn{learning.checkpoint(token,learningProgress,durationMs)}};super.onStop()}
     override fun onDestroy(){PlaybackNotificationService.stop(this);finishLearning("interrupted");phoneServer?.stop();menuHideJob?.cancel();playJob?.cancel();engine.detach(videoView);engine.release();playerOverlay.removeJavascriptInterface("Player");playerOverlay.destroy();web.removeJavascriptInterface("Woniu");web.destroy();db.close();super.onDestroy()}
     private fun switchVocal(target:String){
@@ -359,7 +378,7 @@ class SongbookActivity:ComponentActivity(){
     inner class PlayerBridge{
         @JavascriptInterface fun queue():String=snapshot().toString()
 
-        @JavascriptInterface fun state():String=JSONObject().put("title",activeSong?.title.orEmpty()).put("artist",activeSong?.artist.orEmpty())
+        @JavascriptInterface fun state():String=JSONObject().put("title",activeSong?.title.orEmpty()).put("artist",activeSong?.artist.orEmpty()).put("source",if(activeSong?.metadataProvider=="bilibili")"bilibili" else "115")
             .put("position",positionMs).put("duration",durationMs).put("seekable",engine.seekable).put("fraction",engine.playbackFraction).put("state",playState).put("error",playError)
             .put("vocalMode",vocalMode).put("volume",systemVolumePercent()).put("fullscreen",videoFullscreen).put("tracks",JSONArray(audioLabels)).put("channels",audioChannels).put("channelControl",engine.supportsChannelSelection).put("channelMode",engine.selectedChannelMode).put("edition",activeSong?.edition.orEmpty()).put("counterpart",counterpart?.edition.orEmpty()).toString()
         @JavascriptInterface fun seek(value:Int){runOnUiThread{learningProgress.discontinuity();if(durationMs>0)engine.seekTo(durationMs*value.coerceIn(0,1000)/1000)else engine.seekFraction(value.coerceIn(0,1000)/1000f);armMenuHide()}}
@@ -411,6 +430,7 @@ class SongbookActivity:ComponentActivity(){
                 }finally{biliJobs.decrementAndGet()}
             }
         }
+        @JavascriptInterface fun chartPickerOpen(value:Boolean){chartPickerOpen=value}
         @JavascriptInterface fun songbookVisible():Boolean=::videoPanel.isInitialized&&videoPanel.visibility!=View.VISIBLE
         @JavascriptInterface fun setTheme(value:String){if(value in listOf("dark","light"))db.setting("ui_theme",value,true)}
         @JavascriptInterface fun openPhone(){runOnUiThread{showPhonePairing()}}
@@ -421,7 +441,7 @@ class SongbookActivity:ComponentActivity(){
             val uri=Uri.parse("https://app.woniu.local$path");val route=uri.path.orEmpty()
             val data=if(body.isBlank())JSONObject() else JSONObject(body)
             val result:Any=when{
-                method=="GET"&&route=="/bilibili/status"->bili.status()
+                method=="GET"&&route=="/bilibili/status"->bili.status().put("collectionStatus",collectionStatus)
                 method=="POST"&&route=="/bilibili/login/start"->{
                     val url=bili.startLogin();val matrix=com.google.zxing.qrcode.QRCodeWriter().encode(url,com.google.zxing.BarcodeFormat.QR_CODE,480,480,mapOf(com.google.zxing.EncodeHintType.MARGIN to 4))
                     val bitmap=android.graphics.Bitmap.createBitmap(480,480,android.graphics.Bitmap.Config.RGB_565)
@@ -434,6 +454,8 @@ class SongbookActivity:ComponentActivity(){
                 method=="GET"&&route=="/bilibili/search"->bili.search(uri.getQueryParameter("keyword").orEmpty(),uri.getQueryParameter("page")?.toIntOrNull()?:1)
                 method=="GET"&&route=="/bilibili/folders"->bili.folders(uri.getQueryParameter("uid").orEmpty(),uri.getQueryParameter("page")?.toIntOrNull()?:1)
                 method=="GET"&&route=="/bilibili/favorites"->bili.favorites(uri.getQueryParameter("folder").orEmpty(),uri.getQueryParameter("page")?.toIntOrNull()?:1)
+                method=="POST"&&route=="/bilibili/favorite/remove"->bili.removeFavorite(data.getString("folder"),data.getString("aid"))
+                method=="POST"&&route=="/bilibili/collect"->{val video=bili.video(data.getString("bvid"));val song=db.song(video.id)?:error("请先点播这首歌");require(song.metadataProvider=="bilibili");check(collectBilibili(song)){"自动收藏任务较多，请稍后重试"};JSONObject().put("queued",true)}
                 method=="POST"&&route=="/bilibili/order"->{
                     val video=bili.video(data.getString("bvid"))
                     val match=data.optString("matchTitle").trim();require(match.length<=150)
@@ -492,7 +514,7 @@ class SongbookActivity:ComponentActivity(){
                 route=="/control"&&method=="POST"->{
                     val args=data.optJSONObject("params")?:JSONObject()
                     when(data.getString("action")){
-                        "order"->{val id=args.getString("song_id");val selectedSong=db.song(id)?:error("歌曲不存在");if(activeSong!=null&&playState=="playing"){db.enqueueUnique(id);learn{learning.ordered(selectedSong,args.optString("origin"))}}else{val selected=db.selectForPlayback(id);learn{learning.ordered(selectedSong,args.optString("origin"))};runOnUiThread{playQueue(selected,true)}}}
+                        "order"->{val id=args.getString("song_id");val selectedSong=db.song(id)?:error("歌曲不存在");if(activeSong!=null&&playState=="playing"){db.enqueueUnique(id);learn{learning.ordered(selectedSong,args.optString("origin"))}}else{val selected=db.selectForPlayback(id);learn{learning.ordered(selectedSong,args.optString("origin"))};runOnUiThread{playQueue(selected,true)}};collectBilibili(selectedSong)}
                         "cancel"->db.removeQueue(args.getLong("queue_id"))
                         "top"->db.topQueue(args.getLong("queue_id"))
                         "play"->runOnUiThread{if(activeSong==null)playQueue()else if(playState=="error")playQueue(activeQueueId,true)else{if(resumePlayback())playState="playing";showVideo()}}

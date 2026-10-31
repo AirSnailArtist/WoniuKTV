@@ -9,4 +9,4 @@
 - 本机 JDK 位于 /Users/woniu/Developer/hongguo-tools/jdk/Contents/Home，Android SDK 位于 /Users/woniu/Developer/hongguo-tools/android-sdk。
 - 用户已授权接入 B 站视频搜索、账号收藏夹与播放，并在本地缺歌时选择 B 站 MV 版本；保留 115 曲库、遥控和播放。其他来源仍按用户明确需求推进。
 
-- 智能推荐的数据库、学习与跨设备恢复规则以 SMART-LIBRARY.md 为准；0.9.6 接入与预算见 RELEASE-0.9.6.md。推荐与手机分页保留业务键批量读取和工作量预算。
+- 智能推荐的数据库、学习与跨设备恢复规则以 SMART-LIBRARY.md 为准；0.9.6 接入与预算见 RELEASE-0.9.6.md；0.9.7 榜单与自动收藏预算见 RELEASE-0.9.7.md。推荐与手机分页保留业务键批量读取和工作量预算。

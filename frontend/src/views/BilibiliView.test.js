@@ -8,7 +8,7 @@ vi.mock('vue-router',()=>({useRoute:()=>({query:{}})}))
 vi.mock('../components/SearchKeyboard.vue',()=>({default:{template:'<div />'}}))
 let app,root
 const flush=async()=>{await Promise.resolve();await nextTick();await nextTick()}
-beforeEach(()=>{root=document.createElement('div');document.body.append(root);biliRequest.mockResolvedValue({loggedIn:false})})
+beforeEach(()=>{root=document.createElement('div');document.body.append(root);biliRequest.mockReset().mockResolvedValue({loggedIn:false})})
 afterEach(()=>{app?.unmount();document.body.innerHTML='';vi.clearAllMocks();vi.useRealTimers()})
 async function mount(){app=createApp(BilibiliView);app.mount(root);await flush()}
 function button(text){return [...root.querySelectorAll('button')].find(b=>b.textContent===text)}
@@ -38,4 +38,13 @@ it('stops QR polling when the login dialog closes',async()=>{
  expect(root.querySelector('.phone-qr img')).not.toBeNull()
  button('关闭').click();await flush();await vi.advanceTimersByTimeAsync(15000)
  expect(biliRequest).toHaveBeenCalledTimes(2)
+})
+
+it('removes one favorite from an owned folder without ordering a song',async()=>{
+ biliRequest.mockResolvedValueOnce({loggedIn:true});await mount();biliRequest.mockResolvedValueOnce({items:[{id:'99',title:'窝牛KTV',count:1}],hasMore:false})
+ button('用户收藏夹').click();await flush();biliRequest.mockResolvedValueOnce({items:[{aid:'42',bvid:'BV1GJ411x7h7',title:'测试MV',available:true}],canManage:true,hasMore:false})
+ root.querySelector('.bili-card').click();await flush();biliRequest.mockResolvedValueOnce({removed:true}).mockResolvedValueOnce({items:[],canManage:true,hasMore:false})
+ root.querySelector('.bili-remove').click();await flush();await flush()
+ expect(biliRequest).toHaveBeenCalledWith('favorite/remove','POST',{folder:'99',aid:'42'})
+ expect(biliRequest.mock.calls.some(x=>x[0]==='order')).toBe(false)
 })
