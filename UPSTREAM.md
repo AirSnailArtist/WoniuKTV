@@ -47,3 +47,11 @@ Only supported routes are built. Network requests from the WebView are blocked e
 The playback adapter now embeds VideoLAN LibVLC (`org.videolan.android:libvlc-all:3.6.5`, LGPL-2.1-or-later) for all media formats, using the upstream binary artifact and its standard Java bindings. Official source: https://github.com/videolan/vlc-android ; LibVLC JNI: https://code.videolan.org/videolan/libvlcjni . Maven provides the matching source artifact. LGPL text is bundled in app assets. The earlier Media3 FFmpeg AAR is no longer a runtime dependency.
 
 PlaybackTransport and the UI/queue adapter are local implementations. The loopback-only transport carries Range requests and per-source headers to the fixed 115 source without exposing account cookies or signed URLs to player options. Native VLC codec/demux implementations are reused, not reimplemented.
+
+## 0.9.6 Bilibili web integration
+
+Protocol reference: https://github.com/aaa1115910/bv, commit `0e454c06e954b00df7a0a5a6873c9f18a7f9d0f5`, MIT.
+The WBI key permutation and parameter signing behavior in `BilibiliClient.kt` were adapted from the web-signing portion of `bili-api/.../http/util/ApiSign.kt`; the MIT notice is included in `app/src/main/assets/licenses/BV-MIT.txt`.
+No shared application keys/secrets, APP signing, gRPC proxy, external credential service, or BV app UI is included. The HTTP client, bounded read-only pagination, QR session storage, source adapter and Woniu UI are local implementations. Only user-accessible video/favorite APIs are used; platform verification/permission errors are surfaced without retrying around them.
+
+Official external-player reference: https://player.bilibili.com/ . The current native integration does not embed that player or include danmaku.

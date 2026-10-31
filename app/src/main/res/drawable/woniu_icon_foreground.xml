@@ -1,0 +1,3 @@
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_woniu_brand_v1"
+    android:insetLeft="8%" android:insetRight="8%" android:insetTop="8%" android:insetBottom="8%" />

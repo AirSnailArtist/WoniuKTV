@@ -7,6 +7,6 @@
 - 不运行 connectedDebugAndroidTest；设备测试使用独立测试库，手动覆盖安装测试 APK 后只执行明确指定的测试类。
 - 项目开发签名保存在 /Users/woniu/.config/woniu-ktv/debug.keystore。构建传入 -PwoniuDebugKeystore=该路径；覆盖前校验签名。不得覆盖用户全局 debug.keystore。
 - 本机 JDK 位于 /Users/woniu/Developer/hongguo-tools/jdk/Contents/Home，Android SDK 位于 /Users/woniu/Developer/hongguo-tools/android-sdk。
-- 当前优先稳定 115 曲库恢复、遥控和播放；其他来源接入暂停。
+- 用户已授权接入 B 站视频搜索、账号收藏夹与播放，并在本地缺歌时选择 B 站 MV 版本；保留 115 曲库、遥控和播放。其他来源仍按用户明确需求推进。
 
-- 智能推荐的数据库、学习与跨设备恢复规则以 SMART-LIBRARY.md 为准；当前交付以 RELEASE-0.9.4.md 为准。推荐与手机分页保留业务键批量读取和工作量预算。
+- 智能推荐的数据库、学习与跨设备恢复规则以 SMART-LIBRARY.md 为准；0.9.6 接入与预算见 RELEASE-0.9.6.md。推荐与手机分页保留业务键批量读取和工作量预算。

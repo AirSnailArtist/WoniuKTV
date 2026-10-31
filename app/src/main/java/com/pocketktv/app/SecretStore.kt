@@ -11,8 +11,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Credentials stay in app-private storage, encrypted with a non-exportable Android Keystore key. */
-class SecretStore(context: Context) {
-    private val prefs = context.getSharedPreferences("private_credentials", Context.MODE_PRIVATE)
+class SecretStore(context: Context, namespace:String="") {
+    private val prefs = context.getSharedPreferences(if(namespace.isEmpty())"private_credentials" else "private_credentials_$namespace", Context.MODE_PRIVATE)
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey("pocket-ktv-credentials", null) as? SecretKey)?.let { return it }

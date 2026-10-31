@@ -13,3 +13,5 @@ pinyin4j 2.5.1 — GPL-2.0-or-later. This app is distributed under GPL-3.0 to me
 FFmpeg 6.0.1 audio decoder supplied by Home KTV — LGPL-2.1-or-later; source and build instructions: https://github.com/androidx/media/tree/1.4.1/libraries/decoder_ffmpeg . Actual codec configuration must be reviewed before public redistribution.
 
 Full MIT notices and Apache-2.0 text are included in this directory. Source license files for GPL/LGPL are included with the deliverable.
+
+BV web WBI signing reference, Copyright (c) aaa1115910 — MIT. See BV-MIT.txt and UPSTREAM.md for the pinned source and the limited adapted portion.

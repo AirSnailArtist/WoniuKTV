@@ -5,6 +5,7 @@ export default createRouter({history:createWebHashHistory(),routes:[
 {path:'/ranking',name:'ranking',component:()=>import('../views/RankingView.vue')},
 {path:'/home',name:'home',component:()=>import('../views/HomeView.vue')},
 {path:'/search',name:'search',component:()=>import('../views/SearchView.vue')},
+{path:'/bilibili',name:'bilibili',component:()=>import('../views/BilibiliView.vue')},
 {path:'/favorites',name:'favorites',component:()=>import('../views/FavoritesView.vue')},
 {path:'/browse',name:'browse',component:()=>import('../views/CategoryBrowseView.vue')},
 {path:'/artist/:name',name:'artist',component:()=>import('../views/ArtistView.vue')},

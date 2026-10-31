@@ -17,7 +17,7 @@
               @click="selectFilter(filter.value)">{{ filter.label }}</button>
     </div>
 
-    <div class="results"><PagedCarousel v-if="submitted" :loader="fetchSongs" :query-key="submitted" :page-size="4" :columns="1"><template #default="{items}"><SongRow v-for="song in items" :key="song.id" :song="song" :keyword="submitted" :ordered="orderedIds.has(song.id)" @order="order"/></template></PagedCarousel><div v-else class="tip">输入歌名、歌手或首字母</div></div>
+    <div class="results"><router-link v-if="submitted" class="online-fallback" :to="{name:'bilibili',query:{keyword:submitted+' MV'}}">{{localEmpty?'本地暂无结果 · 去B站找MV ›':'想找其他版本？去B站找MV ›'}}</router-link><PagedCarousel v-if="submitted" :loader="fetchSongs" :query-key="submitted" :page-size="4" :columns="1"><template #default="{items}"><SongRow v-for="song in items" :key="song.id" :song="song" :keyword="submitted" :ordered="orderedIds.has(song.id)" @order="order"/></template></PagedCarousel><div v-else class="tip">输入歌名、歌手或首字母</div></div>
     <SearchKeyboard :model-value="kw" @update:model-value="value=>{kw=value;onInput()}" @submit="doSearch" @system="inp?.focus()"/>
     <TabBar active="home" />
   </div>
@@ -53,7 +53,7 @@ const { toast } = useToast()
 const controls = makeControls(user.clientToken)
 
 /** @type {import('vue').Ref<string>} 当前搜索关键词 / Current search keyword */
-const kw = ref(''),submitted=ref('')
+const kw = ref(''),submitted=ref(''),localEmpty=ref(false)
 /** @type {import('vue').Ref<Array>} 搜索结果列表 / Search result list */
 const results = ref([]),page=ref(0)
 const pageCache=createPageCache(),turning=ref(false)
@@ -81,8 +81,8 @@ let searchSequence = 0
  * Input event handler with 300ms debounce before search (spec H5-03).
  */
 function onInput(){clearTimeout(debounce);debounce=setTimeout(doSearch,300)}
-function doSearch(){submitted.value=kw.value.trim()}
-async function fetchSongs(index){return api.searchSongs(submitted.value,'',index)}
+function doSearch(){localEmpty.value=false;submitted.value=kw.value.trim()}
+async function fetchSongs(index){const key=submitted.value;const rows=await api.searchSongs(key,'',index);if(index===0&&key===submitted.value)localEmpty.value=rows.length===0;return rows}
 function clear(){kw.value='';submitted.value='';inp.value?.focus()}
 function selectFilter(){}
 
@@ -157,3 +157,5 @@ function fmtDur(ms) {
 <style scoped>.search-layout{grid-template-rows:44px minmax(0,1fr) 38px;gap:9px 16px}.search-layout .results{overflow:hidden;display:flex;flex-direction:column;touch-action:pan-y}.search-layout .cnt{flex:none;margin:0 0 3px;font-size:11px}.search-layout :deep(.songrow){min-height:0!important;flex:1;padding-top:4px;padding-bottom:4px}.search-layout .search-keyboard{grid-row:1/span 3}.search-pager{grid-column:1;grid-row:3;display:flex;justify-content:center;align-items:center;gap:22px;font-size:12px}.search-pager button{padding:7px 20px;background:var(--panel2);color:var(--gold);border-radius:9px;min-height:34px}</style>
 
 <style scoped>.search-layout{grid-template-rows:44px minmax(0,1fr)}.search-layout .results{grid-row:2;display:block;min-height:0}.search-layout .search-keyboard{grid-row:1/span 2}</style>
+
+<style scoped>.search-layout .results{display:flex;flex-direction:column}.search-layout .results :deep(.paged-carousel){flex:1;height:auto;min-height:0}.online-fallback{flex:none;color:var(--gold);font-size:12px;padding:5px 4px 9px;text-align:right}</style>

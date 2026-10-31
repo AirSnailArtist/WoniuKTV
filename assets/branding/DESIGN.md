@@ -8,6 +8,7 @@
 - 网页：frontend/src/assets/woniu-logo-v1.png，256 × 256。
 - Android：app/src/main/res/drawable-nodpi/ic_woniu_brand_v1.png，512 × 512。
 - 不透明背景；小尺寸文件仅等比例缩小，保留完整图形。
+- 0.9.6：Android 桌面改用 `mipmap-anydpi-v26/ic_woniu_launcher.xml` 自适应图标，前景复用同一 PNG 并预留 8% 安全边距，背景为 #17181D；桌面名称“窝牛KTV”。
 
 ## 生成提示词
 

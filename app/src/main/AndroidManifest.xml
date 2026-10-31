@@ -2,9 +2,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
-    <application android:label="窝牛家庭KTV" android:icon="@drawable/ic_woniu_brand_v1" android:roundIcon="@drawable/ic_woniu_brand_v1" android:theme="@style/PocketTheme" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+    <application android:label="窝牛KTV" android:icon="@mipmap/ic_woniu_launcher" android:roundIcon="@mipmap/ic_woniu_launcher" android:theme="@style/PocketTheme" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+        <service android:name=".PlaybackNotificationService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
         <activity android:name=".PocketActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden" android:screenOrientation="sensorLandscape">
         </activity>
         <activity android:name=".SongbookActivity" android:exported="true" android:screenOrientation="sensorLandscape" android:configChanges="orientation|screenSize|keyboardHidden">

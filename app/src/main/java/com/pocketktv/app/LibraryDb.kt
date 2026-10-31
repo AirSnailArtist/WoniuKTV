@@ -50,7 +50,7 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
         while(offset<total){
             currentCoroutineContext().ensureActive()
             val entries=readableDatabase.rawQuery("SELECT * FROM songs ORDER BY id LIMIT 500 OFFSET ?",arrayOf(offset.toString())).use{c->buildList{while(c.moveToNext())add(song(c))}}
-            val rows=entries.map{entry->entry.id to metadataValues(entry.name,entry.path.substringBeforeLast('/'),rule,entry)}
+            val rows=entries.filter{it.metadataProvider!="bilibili"}.map{entry->entry.id to metadataValues(entry.name,entry.path.substringBeforeLast('/'),rule,entry)}
             val sql=writableDatabase;sql.beginTransaction()
             try{for((id,values) in rows){sql.update("songs",values,"id=?",arrayOf(id));indexArtists(id,values.getAsString("artist"))};sql.setTransactionSuccessful()}finally{sql.endTransaction()}
             offset+=entries.size;onProgress(offset,total)
@@ -173,6 +173,20 @@ class LibraryDb(context: Context, databaseName:String="pocket-library.db"): SQLi
         return readableDatabase.rawQuery("SELECT * FROM songs WHERE id IN ("+ids.joinToString(","){"?"}+")",ids.toTypedArray()).use{c->buildList{while(c.moveToNext())add(song(c))}}
     }
     fun song(id:String):Song? = readableDatabase.rawQuery("SELECT * FROM songs WHERE id=?",arrayOf(id)).use { if(it.moveToFirst()) song(it) else null }
+    fun rememberBilibili(video:BiliVideo):Song {
+        val previous=song(video.id)
+        require(previous==null||(previous.metadataProvider=="bilibili"&&previous.pickCode==video.bvid)){"视频编号冲突，未覆盖原曲库"}
+        val(full,initials)=SongNames.pinyin(video.title+" "+video.owner)
+        val values=ContentValues().apply{
+            put("id",video.id);put("name",video.title+".mp4");put("title",video.title);put("title_key",ChartMatcher.titleKey(video.title));put("artist",video.owner)
+            put("pick",video.bvid);put("path","https://www.bilibili.com/video/${video.bvid}/?cid=${video.cid}")
+            put("search",("${video.title} ${video.owner} $full $initials").lowercase(Locale.ROOT));put("source_group","B站视频");put("metadata_provider","bilibili");put("edition","B站视频")
+            put("audio_mode","tracks");put("accompaniment",0)
+        }
+        val sql=writableDatabase;sql.beginTransactionNonExclusive()
+        try{sql.insertWithOnConflict("songs",null,values,SQLiteDatabase.CONFLICT_IGNORE);sql.update("songs",values,"id=?",arrayOf(video.id));indexArtists(video.id,video.owner);sql.setTransactionSuccessful()}finally{sql.endTransaction()}
+        return song(video.id)?:error("视频保存失败")
+    }
     private fun song(c:Cursor):Song {
         fun text(name:String)=c.getString(c.getColumnIndexOrThrow(name))
         fun number(name:String)=c.getInt(c.getColumnIndexOrThrow(name))

@@ -31,6 +31,8 @@ import java.io.ByteArrayInputStream
 class SongbookActivity:ComponentActivity(){
     private lateinit var web:WebView
     private lateinit var db:LibraryDb
+    private lateinit var bili:BilibiliClient
+    private val biliJobs=java.util.concurrent.atomic.AtomicInteger(0)
     private lateinit var learning:SmartLibrary
     private var learningToken:String?=null
     private var learningSong:Song?=null
@@ -94,6 +96,8 @@ class SongbookActivity:ComponentActivity(){
     override fun onCreate(state:Bundle?){
         super.onCreate(state);volumeControlStream=android.media.AudioManager.STREAM_MUSIC;db=LibraryDb(this);if(db.setting("stretch_default_v1")!="true"){db.setting("video_resize",AspectRatioFrameLayout.RESIZE_MODE_FILL.toString(),true);db.setting("video_fullscreen","true",true);db.setting("stretch_default_v1","true",true)};window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         learning=SmartLibrary(db);discovery=PublicCharts(this,db)
+        val biliStore=SecretStore(this,"bilibili")
+        bili=BilibiliClient({biliStore.load()},{value->if(value==null)biliStore.clear() else biliStore.save(value)})
         val root=FrameLayout(this).apply{setBackgroundColor(Color.BLACK)}
         rootFrame=root;videoFullscreen=db.setting("video_fullscreen","true")=="true"
         val bar=LinearLayout(this)
@@ -150,7 +154,7 @@ class SongbookActivity:ComponentActivity(){
                 addState(intArrayOf(),android.graphics.drawable.GradientDrawable().apply{setColor(0xff263b34.toInt());cornerRadius=12f})
             };setPadding(20,8,20,8);setOnClickListener{action();if(videoPanel.visibility==View.VISIBLE)showControls()}
         },LinearLayout.LayoutParams(-2,80).apply{setMargins(8,0,8,0)})}
-        control("返回点歌"){hideVideo()};control("暂停 / 继续"){if(engine.isPlaying){engine.pause();playState="paused"}else{engine.resume();playState="playing"}}
+        control("返回点歌"){hideVideo()};control("暂停 / 继续"){if(engine.isPlaying){engine.pause();playState="paused"}else{if(resumePlayback())playState="playing"}}
         control("下一首"){nextSong()};control("原唱 / 伴奏"){audioOptions()};control("画面"){pictureOptions()}
         control("更多"){AlertDialog.Builder(this).setTitle("播放操作").setItems(arrayOf("重唱当前歌曲","重新获取播放地址并重试","停止播放，返回点歌")){_,i->when(i){
             0->{engine.restart();playState="playing"};1->playQueue(activeQueueId,true);2->{finishLearning("stop");playJob?.cancel();engine.stop();activeSong=null;activeQueueId=0;playState="idle";hideVideo()}
@@ -173,11 +177,12 @@ class SongbookActivity:ComponentActivity(){
         videoPanel.addView(playerOverlay,FrameLayout.LayoutParams(-1,-1))
         root.addView(videoPanel,FrameLayout.LayoutParams(-1,-1));setContentView(root)
         engine=PlaybackEngine(this,{pos->positionMs=pos;durationMs=engine.durationMs;learningTick()
+                PlaybackNotificationService.update(activeSong?.title.orEmpty(),activeSong?.artist.orEmpty(),playState,positionMs,durationMs)
                 if(!draggingSeek){playerSeek.progress=if(durationMs>0)(pos*1000/durationMs).toInt().coerceIn(0,1000) else 0}
                 elapsedLabel.text=timeText(pos);durationLabel.text=timeText(durationMs)
                 audioChannels=engine.audioChannelCount
                 if(playError.isBlank()&&engine.isPlaying)playState="playing"},
-            {nextSong(true)},{message->finishLearning("error");playState="error";playError=message;videoTitle.text="播放失败：$message · 可点重试或下一首";showControls()})
+            {nextSong(true)},{message->PlaybackNotificationService.stop(this);finishLearning("error");playState="error";playError=message;videoTitle.text="播放失败：$message · 可点重试或下一首";showControls()})
         engine.attach(videoView)
         engine.setResizeMode(videoView.resizeMode)
         engine.onAudioTracksChanged={tracks->
@@ -272,22 +277,38 @@ class SongbookActivity:ComponentActivity(){
             .setNeutralButton("伴奏说明"){_,_->AlertDialog.Builder(this).setMessage("独立伴奏音轨或左右声道分离的 KTV 文件可以直接切换。普通 MV 的立体声不等于伴奏，左右声道试听不会自动去人声。需要独立伴奏文件或额外的人声分离处理。").setPositiveButton("知道了",null).show()}
             .setNegativeButton("关闭",null).show()
     }
+    private fun keepPlaybackForeground(song:Song):Boolean=try{
+        val activityRef=java.lang.ref.WeakReference(this)
+        PlaybackNotificationService.start(this,song.title,song.artist){action->activityRef.get()?.PlayerBridge()?.action(action)}
+        true
+    }catch(e:Exception){
+        android.util.Log.w("WoniuPlayback","Background playback start rejected: "+e.javaClass.simpleName)
+        playState="error";playError="系统暂不允许启动后台播放，请回到应用后重试";false
+    }
+    private fun resumePlayback():Boolean {
+        val song=activeSong?:return false
+        if(!keepPlaybackForeground(song))return false
+        engine.resume();return true
+    }
     private fun playQueue(queueId:Long?=null,force:Boolean=false,resumeAt:Long=0){
         val song=db.queue().let{items->if(queueId!=null)items.firstOrNull{it.queueId==queueId} else items.firstOrNull()}
-        if(song==null){playState="idle";activeSong=null;activeQueueId=0;engine.stop();hideVideo();return}
+        if(song==null){playState="idle";activeSong=null;activeQueueId=0;engine.stop();PlaybackNotificationService.stop(this);hideVideo();return}
         if(!force&&activeSong!=null){showVideo();return}
         learningAttempts=0;learningRetryAt=0
         if(learningSong?.let{SmartLibrary.workKey(it)!=SmartLibrary.workKey(song)}==true)finishLearning("replaced")
         learningProgress.discontinuity();learningSong=if(learningToken!=null)song else null
         playJob?.cancel();engine.stop();activeSong=song;vocalMode=if(song.edition.contains("伴")||song.audioMode in listOf("left","right")||(song.audioMode=="track"&&song.accompaniment>0))"accompaniment" else "original";counterpart=db.counterpart(song);activeQueueId=song.queueId;positionMs=0;durationMs=0;playState="loading";playError="";audioLabels=emptyList();audioChannels=0
-        videoTitle.text="正在获取 115 视频：${song.title}";showVideo()
+        if(!keepPlaybackForeground(song)){showVideo();showControls();return}
+        videoTitle.text="正在获取${if(song.metadataProvider=="bilibili")"B站" else "115"}视频：${song.title}";showVideo()
         playJob=lifecycleScope.launch{
             try{
-                val source=Drive115(SecretStore(this@SongbookActivity)).source(song.pickCode)
+                val source=if(song.metadataProvider=="bilibili")withContext(Dispatchers.IO){bili.source(song.pickCode,Uri.parse(song.path).getQueryParameter("cid")?.toLongOrNull()?:error("视频分P标识缺失，请重新从B站点选"))}
+                    else Drive115(SecretStore(this@SongbookActivity)).source(song.pickCode)
                 ensureActive();videoTitle.text=song.title;engine.setChannelMode("stereo")
                 engine.setVocalMode("original",0,1)
                 engine.play(song.id.toLong(),source.url,source.headers,true,resumeAt,song.name.substringAfterLast('.'))
             }catch(e:CancellationException){throw e}catch(e:Exception){
+                PlaybackNotificationService.stop(this@SongbookActivity)
                 playState="error";playError=if(e is Drive115.DriveError)e.message.orEmpty() else e.javaClass.simpleName+"："+(e.message?.takeUnless{it.contains("http")||it.contains("token",true)||it.contains("cookie",true)}?:"请重试")
                 videoTitle.text="无法播放：$playError · 可点重试或下一首"
                 showControls()
@@ -310,7 +331,7 @@ class SongbookActivity:ComponentActivity(){
                 if(event.action==KeyEvent.ACTION_UP)playerOverlay.evaluateJavascript("window.remoteConfirm && window.remoteConfirm()",null);return true
             }
             if(event.keyCode in listOf(KeyEvent.KEYCODE_MEDIA_NEXT,KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)){
-                if(event.action==KeyEvent.ACTION_UP){if(event.keyCode==KeyEvent.KEYCODE_MEDIA_NEXT)nextSong() else if(engine.isPlaying){engine.pause();playState="paused"}else{engine.resume();playState="playing"}};return true
+                if(event.action==KeyEvent.ACTION_UP){if(event.keyCode==KeyEvent.KEYCODE_MEDIA_NEXT)nextSong() else if(engine.isPlaying){engine.pause();playState="paused"}else{if(resumePlayback())playState="playing"}};return true
             }
             return super.dispatchKeyEvent(event)
         }
@@ -322,10 +343,11 @@ class SongbookActivity:ComponentActivity(){
         return super.dispatchKeyEvent(event)
     }
     override fun onResume(){super.onResume();if(::web.isInitialized&&web.progress==100)web.reload()}
-    override fun onStop(){learningProgress.discontinuity();learningToken?.let{token->learn{learning.checkpoint(token,learningProgress,durationMs)}};super.onStop();if(::engine.isInitialized&&engine.isPlaying){engine.pause();playState="paused"}}
-    override fun onDestroy(){finishLearning("interrupted");phoneServer?.stop();menuHideJob?.cancel();playJob?.cancel();engine.detach(videoView);engine.release();playerOverlay.removeJavascriptInterface("Player");playerOverlay.destroy();web.removeJavascriptInterface("Woniu");web.destroy();db.close();super.onDestroy()}
+    override fun onStop(){learningToken?.let{token->learn{learning.checkpoint(token,learningProgress,durationMs)}};super.onStop()}
+    override fun onDestroy(){PlaybackNotificationService.stop(this);finishLearning("interrupted");phoneServer?.stop();menuHideJob?.cancel();playJob?.cancel();engine.detach(videoView);engine.release();playerOverlay.removeJavascriptInterface("Player");playerOverlay.destroy();web.removeJavascriptInterface("Woniu");web.destroy();db.close();super.onDestroy()}
     private fun switchVocal(target:String){
         val song=activeSong?:return;if(target==vocalMode)return
+        if(song.metadataProvider=="bilibili"){android.widget.Toast.makeText(this,"B站视频按原视频播放，不提供伴奏切换",android.widget.Toast.LENGTH_SHORT).show();return}
         if(audioLabels.size>1){val named=audioLabels.indexOfFirst{if(target=="accompaniment")it.contains("伴奏")||it.contains("伴唱") else it.contains("原唱")};val index=if(named>=0)named else if(target=="accompaniment")1 else 0
             engine.setChannelMode("stereo");engine.setVocalMode(if(index==0)"original" else "accompaniment",index,audioLabels.size);db.audio(song.id,"track",index);activeSong=db.song(song.id)?.copy(queueId=activeQueueId);vocalMode=target
         }else if(counterpart?.edition?.contains("伴")== (target=="accompaniment")){val at=positionMs;db.replaceQueueSong(activeQueueId,counterpart!!.id);playQueue(activeQueueId,true,at)}
@@ -343,10 +365,13 @@ class SongbookActivity:ComponentActivity(){
         @JavascriptInterface fun seek(value:Int){runOnUiThread{learningProgress.discontinuity();if(durationMs>0)engine.seekTo(durationMs*value.coerceIn(0,1000)/1000)else engine.seekFraction(value.coerceIn(0,1000)/1000f);armMenuHide()}}
         @JavascriptInterface fun action(action:String){runOnUiThread{
             when(action){
+                "resume"->{if(playState=="error")playQueue(activeQueueId,true)else{if(resumePlayback())playState="playing"}}
+                "pause_only"->{if(playState!="error"){engine.pause();playState="paused"}}
+                "stop"->{finishLearning("stop");playJob?.cancel();engine.stop();activeSong=null;activeQueueId=0;playState="idle";PlaybackNotificationService.stop(this@SongbookActivity);hideVideo()}
                 "toggle_menu"->{if(menuShown)hideControls()else showControls();return@runOnUiThread}
                 "hold_menu"->{menuHideJob?.cancel();return@runOnUiThread}
                 "interact"->{armMenuHide();return@runOnUiThread}
-                "pause"->{if(engine.isPlaying){engine.pause();playState="paused"}else{engine.resume();playState="playing"}}
+                "pause"->{if(playState=="error")playQueue(activeQueueId,true)else if(engine.isPlaying){engine.pause();playState="paused"}else{if(resumePlayback())playState="playing"}}
                 "next"->nextSong()
                 "restart"->{engine.restart();playState="playing"}
                 "back"->{hideVideo();return@runOnUiThread}
@@ -361,7 +386,7 @@ class SongbookActivity:ComponentActivity(){
             };armMenuHide()
         }}
     }
-    private fun songJson(song:Song)=JSONObject().put("id",song.id).put("title",song.title).put("artist",song.artist.ifBlank{"未识别歌手"})
+    private fun songJson(song:Song)=JSONObject().put("id",song.id).put("source",if(song.metadataProvider=="bilibili")"bilibili" else "115").put("bvid",if(song.metadataProvider=="bilibili")song.pickCode else "").put("title",song.title).put("artist",song.artist.ifBlank{"未识别歌手"})
         .put("mediaType",if(song.name.substringAfterLast('.').lowercase() in listOf("mp3","flac","wav","aac","m4a","ogg"))"AUDIO" else "MV").put("language",song.language).put("genre",song.genre).put("edition",song.edition).put("durationMs",0).put("coverUrl",JSONObject.NULL)
     private fun songsJson(songs:List<Song>)=JSONArray().apply{songs.forEach{put(songJson(it))}}
     private fun snapshot()=JSONObject().put("state",playState).put("playing",activeSong?.let{JSONObject().put("queueId",activeQueueId).put("song",songJson(it)).put("orderedByNick","家人")}?:JSONObject.NULL)
@@ -377,6 +402,15 @@ class SongbookActivity:ComponentActivity(){
         return JSONObject().put("items",rows).put("list",rows).put("queuedIds",queued).put("hasMore",head.size>50).put("after",head.take(50).lastOrNull()?.first?.toString().orEmpty()).put("playing",activeSong?.let{JSONObject().put("song",songJson(it))}?:JSONObject.NULL).put("player",JSONObject(PlayerBridge().state()))
     }
     inner class LocalBridge{
+        @JavascriptInterface fun biliRequest(id:String,path:String,method:String,body:String){
+            if(!id.matches(Regex("[a-zA-Z0-9-]{1,64}"))||!path.startsWith("/bilibili/")||body.length>8192)return
+            if(biliJobs.incrementAndGet()>2){biliJobs.decrementAndGet();val result=JSONObject().put("id",id).put("ok",false).put("message","B站请求处理中，请稍后重试");runOnUiThread{web.evaluateJavascript("window.dispatchEvent(new CustomEvent('woniu-bili-response',{detail:$result}))",null)};return}
+            lifecycleScope.launch{
+                try{val result=withContext(Dispatchers.IO){JSONObject(request(path,method,body)).put("id",id)}
+                    web.evaluateJavascript("window.dispatchEvent(new CustomEvent('woniu-bili-response',{detail:$result}))",null)
+                }finally{biliJobs.decrementAndGet()}
+            }
+        }
         @JavascriptInterface fun songbookVisible():Boolean=::videoPanel.isInitialized&&videoPanel.visibility!=View.VISIBLE
         @JavascriptInterface fun setTheme(value:String){if(value in listOf("dark","light"))db.setting("ui_theme",value,true)}
         @JavascriptInterface fun openPhone(){runOnUiThread{showPhonePairing()}}
@@ -387,6 +421,31 @@ class SongbookActivity:ComponentActivity(){
             val uri=Uri.parse("https://app.woniu.local$path");val route=uri.path.orEmpty()
             val data=if(body.isBlank())JSONObject() else JSONObject(body)
             val result:Any=when{
+                method=="GET"&&route=="/bilibili/status"->bili.status()
+                method=="POST"&&route=="/bilibili/login/start"->{
+                    val url=bili.startLogin();val matrix=com.google.zxing.qrcode.QRCodeWriter().encode(url,com.google.zxing.BarcodeFormat.QR_CODE,480,480,mapOf(com.google.zxing.EncodeHintType.MARGIN to 4))
+                    val bitmap=android.graphics.Bitmap.createBitmap(480,480,android.graphics.Bitmap.Config.RGB_565)
+                    bitmap.setPixels(IntArray(480*480){if(matrix[it%480,it/480])android.graphics.Color.BLACK else android.graphics.Color.WHITE},0,480,0,0,480,480)
+                    val out=java.io.ByteArrayOutputStream();bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,out);bitmap.recycle()
+                    JSONObject().put("image","data:image/png;base64,"+android.util.Base64.encodeToString(out.toByteArray(),android.util.Base64.NO_WRAP))
+                }
+                method=="POST"&&route=="/bilibili/login/poll"->bili.pollLogin()
+                method=="POST"&&route=="/bilibili/logout"->{bili.logout();JSONObject().put("loggedIn",false)}
+                method=="GET"&&route=="/bilibili/search"->bili.search(uri.getQueryParameter("keyword").orEmpty(),uri.getQueryParameter("page")?.toIntOrNull()?:1)
+                method=="GET"&&route=="/bilibili/folders"->bili.folders(uri.getQueryParameter("uid").orEmpty(),uri.getQueryParameter("page")?.toIntOrNull()?:1)
+                method=="GET"&&route=="/bilibili/favorites"->bili.favorites(uri.getQueryParameter("folder").orEmpty(),uri.getQueryParameter("page")?.toIntOrNull()?:1)
+                method=="POST"&&route=="/bilibili/order"->{
+                    val video=bili.video(data.getString("bvid"))
+                    val match=data.optString("matchTitle").trim();require(match.length<=150)
+                    val rawArtists=data.optJSONArray("matchArtists")?:JSONArray();require(rawArtists.length()<=10)
+                    val artists=(0 until rawArtists.length()).map{rawArtists.getString(it).also{name->require(name.isNotBlank()&&name.length<=80)}}
+                    val song=if(match.isNotBlank()){
+                        require(artists.isNotEmpty()){"请选择有歌手信息的榜单歌曲"}
+                        db.rememberBilibili(video.copy(title=match,owner=artists.joinToString(" / "))).also{discovery.choose(match,artists,it.id)}
+                    }else db.song(video.id)?:db.rememberBilibili(video)
+                    val response=JSONObject(request("/control","POST",JSONObject().put("action","order").put("params",JSONObject().put("song_id",song.id).put("origin","bilibili")).toString()))
+                    check(response.optBoolean("ok")){response.optString("message")};JSONObject().put("ordered",true).put("songId",song.id)
+                }
                 method=="POST"&&route=="/phone/state"->{val raw=data.optJSONArray("ids")?:JSONArray();require(raw.length()<=200);phoneSnapshot((0 until raw.length()).map{raw.getString(it)})}
                 method=="GET"&&route=="/phone/queue"->phoneSnapshot(emptyList(),uri.getQueryParameter("after")?.toLongOrNull()?:Long.MIN_VALUE)
                 method=="GET"&&route=="/phone/songs"->{val rows=db.phoneSongs(uri.getQueryParameter("after").orEmpty().take(30),uri.getQueryParameter("keyword").orEmpty().take(80),uri.getQueryParameter("artist").orEmpty().take(80));JSONObject().put("items",songsJson(rows.take(20))).put("hasMore",rows.size>20).put("after",rows.take(20).lastOrNull()?.id.orEmpty())}
@@ -436,7 +495,7 @@ class SongbookActivity:ComponentActivity(){
                         "order"->{val id=args.getString("song_id");val selectedSong=db.song(id)?:error("歌曲不存在");if(activeSong!=null&&playState=="playing"){db.enqueueUnique(id);learn{learning.ordered(selectedSong,args.optString("origin"))}}else{val selected=db.selectForPlayback(id);learn{learning.ordered(selectedSong,args.optString("origin"))};runOnUiThread{playQueue(selected,true)}}}
                         "cancel"->db.removeQueue(args.getLong("queue_id"))
                         "top"->db.topQueue(args.getLong("queue_id"))
-                        "play"->runOnUiThread{if(activeSong==null)playQueue()else if(playState=="error")playQueue(activeQueueId,true)else{engine.resume();playState="playing";showVideo()}}
+                        "play"->runOnUiThread{if(activeSong==null)playQueue()else if(playState=="error")playQueue(activeQueueId,true)else{if(resumePlayback())playState="playing";showVideo()}}
                         "show_player"->runOnUiThread{if(activeSong==null)playQueue()else showVideo()}
                         "player_action"->{val action=args.getString("value");require(action in listOf("toggle_vocal","original","accompaniment","counterpart","stereo","left","right") || (action.startsWith("track:") && action.substringAfter(':').toIntOrNull()?.let{it in audioLabels.indices}==true)){"音轨尚未就绪"};PlayerBridge().action(action)}
                         "audio"->PlayerBridge().action("toggle_vocal")
@@ -452,7 +511,7 @@ class SongbookActivity:ComponentActivity(){
                 else->error("这个功能尚未接入本地版本")
             }
             JSONObject().put("ok",true).put("data",result).toString()
-        }catch(e:Exception){JSONObject().put("ok",false).put("message",e.message?:"本地操作失败").toString()}
+        }catch(e:Exception){JSONObject().put("ok",false).put("message",if(e is java.io.IOException)"网络请求未完成，请检查连接后重试" else e.message?:"本地操作失败").toString()}
     }
 }
 

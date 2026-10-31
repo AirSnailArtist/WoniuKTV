@@ -59,7 +59,7 @@ class PublicCharts(private val context:Context,private val db:LibraryDb) {
                 val song=saved?:ChartMatcher.select(candidates,if(original.isNullOrBlank())entry.artists else ArtistNames.members(original))
                 val item=JSONObject().put("source",feed.id).put("rank",entry.rank).put("title",entry.title).put("artists",JSONArray(entry.artists)).put("available",song!=null).put("status",if(song!=null)"matched" else if(candidates.isNotEmpty())"confirm" else "missing")
                 if(song!=null){item.put("song",JSONObject().put("id",song.id).put("title",song.title).put("artist",song.artist).put("language",song.language).put("edition",song.edition))
-                    if(song.language in LibraryLanguage.chinese){val work=key+"|"+ArtistNames.members(song.artist).map{ChartMatcher.artistKey(it)}.sorted().joinToString();scores[work]=(scores[work]?:0.0)+1.0/(entry.rank+10)+(if(song.favorite)0.025 else 0.0);merged.putIfAbsent(work,item)}
+                    if(song.language in LibraryLanguage.chinese||song.metadataProvider=="bilibili"){val work=key+"|"+ArtistNames.members(song.artist).map{ChartMatcher.artistKey(it)}.sorted().joinToString();scores[work]=(scores[work]?:0.0)+1.0/(entry.rank+10)+(if(song.favorite)0.025 else 0.0);merged.putIfAbsent(work,item)}
                 };all.put(item)
             }
         }
